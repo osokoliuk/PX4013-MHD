@@ -15,13 +15,29 @@ import matplotlib.pyplot as plt
 import numpy as np
 import lightkurve as lk
 
-ax = plt.subplot(111)
 
-source = "V344 Lyr"
+class CV:
+    ########################################################################
+    # Initialize a class HMF (Halo Mass Function)
+    # float a - scale factor value (related to redshift via a = 1/(1+z))
+    # array of floats k - wavenumber in units of 1/Mpc
+    # string model - model of MG for the derivation of mu parameter
+    # string model_H - model of MG for H(a)
+    # float par1, par2 - corresponding MG parameters
+    # Masses - array of CDM halo masses
+    ########################################################################
 
-search_result = lk.search_targetpixelfile(source, author="Kepler")
-search_download = search_result.download_all()[:5]
-for dataset in search_download:
-    lc = dataset.to_lightcurve()
-    lc.plot(c="k", ax=ax)
-plt.savefig("test.png")
+    def __init__(self, source, telescope, nobs):
+        self.source = source
+        self.telescope = telescope
+        self.nobs = nobs
+
+    def extract_lightcurves_from_tpf(self):
+        search_result = lk.search_targetpixelfile(self.source, author=self.telescope)
+        search_download = search_result.download_all()[: self.nobs]
+        for dataset in search_download:
+            lc_arr.append(dataset.to_lightcurve())
+
+    def plot_lightcurve(lc, ax, filename):
+        lc.plot(c="k", ax=ax)
+        plt.savefig(filename)

@@ -44,6 +44,9 @@ fourierCoefficient ::
     Ak
 fourierCoefficient t0 t n k g f =
     let i = (0 :+ 1)
-     in t / n * sum [g (j * t / n) * f (j * t / n - t0) * exp (2 * pi * i * k * j / n) * exp (-2 * pi * i * k * t0 / t) | j <- [0, 1 .. n - 1]]
+     in (t / n) * 
+      sum [g (j * t / n) * f (j * t / n - t0) 
+        * exp (2 * pi * i * k * j / n) 
+          * exp (-2 * pi * i * k * t0 / t) | j <- [0, 1 .. n - 1]]
 
 main = print "1"

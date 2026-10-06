@@ -1,0 +1,6 @@
+pyproject.toml
+src/get_cvs.py
+src/cvpy.egg-info/PKG-INFO
+src/cvpy.egg-info/SOURCES.txt
+src/cvpy.egg-info/dependency_links.txt
+src/cvpy.egg-info/top_level.txt

@@ -1,0 +1,12 @@
+[build-system]
+requires = ["setuptools>=61", "wheel", "lightkurve", "matplotlib", "numpy", "scipy"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cvpy"
+version = "0.1.0"
+description = "Cataclysmic Variable lightcurve analyser with higher order polyspectra"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+py-modules = ["get_cvs"]
