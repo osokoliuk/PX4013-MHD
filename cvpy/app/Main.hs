@@ -3,17 +3,17 @@
 build-depends:
   base,
   parallel
-ghc-options: -main-is Fourier
+ghc-options: -main-is Fourier -O2 -threaded
 -}
 {-# LANGUAGE ExplicitNamespaces #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
 
-module Fourier where
+module Main where
 
 {-
-Module      : Fourier.hs
+Module      : Main.hs
 Description : Discrete Fourier methods module
 Copyright   : (c) Oleksii Sokoliuk, 2026
 License     : MIT
@@ -31,13 +31,14 @@ polyspectra
 import Control.Parallel.Strategies
 import Data.Complex (Complex (..), conjugate, imagPart, realPart)
 import Data.List (transpose)
+import qualified Data.Map as MP
 
 -- Some type definitions
 type WindowFunction = Complex Double -> Complex Double
 type SignalFunction = Complex Double -> Complex Double
 type Index_i = Complex Double
-type Index_j = Complex Double
-type Index_k = Complex Double
+type Index_l = Complex Double
+type Index_p = Complex Double
 type N = Complex Double
 type T = Complex Double
 type M = Complex Double
@@ -140,9 +141,12 @@ calculatePolyspectra ::
     [[Ap]] ->
     [[Akl]] ->
     [[Aklp]] ->
-    (S2, S3)
+    [S2]
 calculatePolyspectra m n t omegaT ak al ap akl aklp =
     let
+        akMap :: MP.Map Index_k Ak
+        akMap = MP.fromList $ zip [0, 1 .. realPart n - 1] ak
+
         g = windowFunction n t omegaT
 
         -- Second order cumulant
@@ -168,14 +172,18 @@ calculatePolyspectra m n t omegaT ak al ap akl aklp =
                 / (t * sum [g (j * t / n) * conjugate (g (j * t / n)) | j <- real <$> [0, 1 .. realPart n - 1]])
 
         -- Third order polyspectrum (i.e. bispectrum)
-        s3 :: M -> T -> N -> [Ak] -> [Al] -> [Akl] -> S2
-        s3 m t n ak al akl =
-            (n * (c3 m ak al (conjugate <$> akl)))
-                / (t * sum [g (j * t / n) ** 2 * conjugate (g (j * t / n)) | j <- real <$> [0, 1 .. realPart n - 1]])
+        s3 :: M -> T -> N -> MP.Map Index_k Ak -> [Index_k] -> [Index_l] -> S2
+        s3 m t n akMap k l =
+            let ak = fromMaybe 0 MP.lookup k akMap
+                al = fromMaybe 0 MP.lookup l akMap
+                akl = fromMaybe 0 MP.lookup (k + l) akMap
+             in (n * (c3 m ak al (conjugate <$> akl)))
+                    / (t * sum [g (j * t / n) ** 2 * conjugate (g (j * t / n)) | j <- real <$> [0, 1 .. realPart n - 1]])
 
-        evaluatedS2 = (map (\x -> s2 m t n x) ak) `using` parList rdeepseq
+        evaluatedS2 = (parMap rdeepseq (\x -> s2 m t n x) ak)
+        evaluatedS3 = (parMap rdeepseq (\x -> s3 m t n x y))
      in
-        (s2 m t n ak, s3 m t n ak al akl)
+        evaluatedS2
 
 main :: IO ()
 main = do
@@ -183,5 +191,5 @@ main = do
         n = real 100
         t = real 100
         omegaT = 0.14
-        ak = [(\k -> fourierCoefficient t0 n t k (windowFunction n t omegaT) (cos)) <$> (real <$> [0, 1 .. 99]) | t0 <- (real <$> [0.0, realPart t .. realPart $ m * t])]
-    print $ realPart <$> (\x -> calculatePolyspectra m n t omegaT x) <$> transpose ak
+        ak = parMap rdeepseq (\t0 -> (\k -> fourierCoefficient t0 n t k (windowFunction n t omegaT) (cos)) <$> (real <$> [0, 1 .. 99])) (real <$> [0.0, realPart t .. realPart $ m * t])
+    print $ realPart <$> (calculatePolyspectra m n t omegaT (transpose ak) (transpose ak) (transpose ak) (transpose ak) (transpose ak))
