@@ -1,9 +1,3 @@
-# /Users/user/PX4013-MHD
-This is the README file for the /Users/user/PX4013-MHD project.
-You can write here a description of your project.
-Suggested sections:
-- Presentation
-- Installation
-- Usage
-- Contributing
-- License
+Repository containing most of the scripts for Oleksii Sokoliuk PX4013 project
+"Magnetohydrodynamics of Cataclysmic Variables: Signatures of chaos and non-linearity"
+
