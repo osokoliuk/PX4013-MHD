@@ -5,12 +5,11 @@ import matplotlib.pyplot as plt
 
 
 def main():
-    ax = plt.subplots(111)
     filename = "test.png"
 
-    CV_library = CV(source="V344 Lyr", telescope="Kepler", nobs=5)
+    CV_library = CV(source="RR Lyr", telescope="Kepler", nobs=10)
     lc_array = CV_library.extract_lightcurves_from_tpf()
-    CV_library.plot_lightcurves(lc_array, ax, filename)
+    CV_library.plot_lightcurves(lc_array, filename)
 
 
 if __name__ == "__main__":

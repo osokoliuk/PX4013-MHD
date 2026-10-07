@@ -33,11 +33,15 @@ class CV:
         self.nobs = nobs
 
     def extract_lightcurves_from_tpf(self):
+        lc_arr = []
         search_result = lk.search_targetpixelfile(self.source, author=self.telescope)
         search_download = search_result.download_all()[: self.nobs]
         for dataset in search_download:
             lc_arr.append(dataset.to_lightcurve())
+        return lc_arr
 
-    def plot_lightcurve(lc, ax, filename):
-        lc.plot(c="k", ax=ax)
+    def plot_lightcurves(self, lc_arr, filename):
+        fig, ax = plt.subplots()
+        for lc in lc_arr:
+            lc.plot(c="k", ax=ax)
         plt.savefig(filename)

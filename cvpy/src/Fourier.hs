@@ -32,6 +32,21 @@ type N = Complex Double
 type T = Complex Double
 type T0 = Complex Double
 type Ak = Complex Double
+type OmegaT = Complex Double
+
+real :: Double -> Complex Double
+real x = x :+ 0
+
+gaussian :: N -> T -> OmegaT -> Complex Double -> Complex Double
+gaussian n t omegaT x = exp (-((x - n / 2) / (2 * t * omegaT)) ** 2)
+
+windowFunction :: N -> T -> OmegaT -> Complex Double
+windowFunction n t omegaT =
+    gausssian (t, n, omegaT, n)
+        - ( gaussian (t, n, omegaT, real $ -1 / 2)
+                * (gaussian (t, n, omegaT, real $ n + t) + gaussian (t, n, omegaT, real $ n - t))
+          )
+            / (gaussian (t, n, omegaT, real $- 1 / 2 + t) + gaussian (t, n, omegaT, real $ -1 / 2 - t))
 
 fourierCoefficient ::
     (Enum N) =>
@@ -44,9 +59,14 @@ fourierCoefficient ::
     Ak
 fourierCoefficient t0 t n k g f =
     let i = (0 :+ 1)
-     in (t / n) * 
-      sum [g (j * t / n) * f (j * t / n - t0) 
-        * exp (2 * pi * i * k * j / n) 
-          * exp (-2 * pi * i * k * t0 / t) | j <- [0, 1 .. n - 1]]
+     in (t / n)
+            * sum
+                [ g (j * t / n)
+                    * f (j * t / n - t0)
+                    * exp (2 * pi * i * k * j / n)
+                    * exp (-2 * pi * i * k * t0 / t)
+                | j <- [0, 1 .. n - 1]
+                ]
 
+main :: IO ()
 main = print "1"
