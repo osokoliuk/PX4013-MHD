@@ -136,10 +136,18 @@ fourAverage ::
     Complex Double
 fourAverage x y z w = average (zipWith4 (\x y z w -> x * y * z * w) x y z w)
 
-interpolate :: (Fractional a) => (a, a) -> (a, a) -> a -> a
+interpolate ::
+    (Fractional a) =>
+    (a, a) ->
+    (a, a) ->
+    a ->
+    a
 interpolate (a, av) (b, bv) x = av + (x - a) * (bv - av) / (b - a)
 
-mapLookup :: MP.Map Double Double -> Double -> Double
+mapLookup ::
+    MP.Map Double Double ->
+    Double ->
+    Double
 mapLookup m x =
     case (MP.lookupLE x m, MP.lookupGE x m) of
         (Just (a, av), Just (b, bv)) ->
@@ -150,7 +158,11 @@ mapLookup m x =
         (Just (a, av), Nothing) -> av
         _ -> error "mapLookup"
 
-closestValue :: (Ord a, Num a) => a -> [(a, b)] -> b
+closestValue ::
+    (Ord a, Num a) =>
+    a ->
+    [(a, b)] ->
+    b
 closestValue x m = snd $ minimumBy (comparing (abs . subtract x . fst)) m
 
 -- | Gaussian function with an amplitude 1 and standard deviation t * sigmaT
@@ -180,14 +192,21 @@ windowFunction n t sigmaT x =
                     / (gaussian t n sigmaT (real (-1 / 2) + t) + gaussian t n sigmaT (real (-1 / 2) - t))
 
 -- | Check if a number can be represented by 2**x
-isPowerOfTwo :: Int -> Bool
+isPowerOfTwo ::
+    Int ->
+    Bool
 isPowerOfTwo 1 = True
 isPowerOfTwo x
     | mod x 2 == 0 = isPowerOfTwo (div x 2)
     | otherwise = False
 
 -- | Fast Fourier Transform (FFT) function, taken from https://github.com/sjappig/convhs
-fftRaw :: (RealFloat a) => [a] -> Int -> Int -> [Complex a]
+fftRaw ::
+    (RealFloat a) =>
+    [a] ->
+    Int ->
+    Int ->
+    [Complex a]
 fftRaw _ 0 _ = []
 fftRaw [] _ _ = []
 fftRaw (x0 : _) 1 _ = [x0 :+ 0]
@@ -197,7 +216,10 @@ fftRaw x n s = zipWith (+) x1 x2 ++ (zipWith (-) x1 x2)
     x2 = zipWith (*) [exp (0 :+ (-2 * pi * fromIntegral k / (fromIntegral n))) | k <- [0 .. ((div n 2) - 1)]] (fftRaw (drop s x) (div n 2) (2 * s))
 
 -- | FFT helper function
-fft :: (RealFloat a) => [a] -> [Complex a]
+fft ::
+    (RealFloat a) =>
+    [a] ->
+    [Complex a]
 fft x
     | isPowerOfTwo n = fftRaw x n 1
     | otherwise = error "FFT works only for powers of two"
@@ -205,7 +227,12 @@ fft x
     n = length x
 
 -- | Inverse FFT function, taken from https://github.com/sjappig/convhs
-ifftRaw :: (RealFloat a) => [Complex a] -> Int -> Int -> [Complex a]
+ifftRaw ::
+    (RealFloat a) =>
+    [Complex a] ->
+    Int ->
+    Int ->
+    [Complex a]
 ifftRaw _ 0 _ = []
 ifftRaw [] _ _ = []
 ifftRaw (x0 : _) 1 _ = [x0]
@@ -215,7 +242,10 @@ ifftRaw x n s = zipWith (+) x1 x2 ++ (zipWith (-) x1 x2)
     x2 = zipWith (*) [exp (0 :+ (2 * pi * fromIntegral k / (fromIntegral n))) | k <- [0 .. ((div n 2) - 1)]] (ifftRaw (drop s x) (div n 2) (2 * s))
 
 -- | Inverse FFT helper function
-ifft :: (RealFloat a) => [Complex a] -> [a]
+ifft ::
+    (RealFloat a) =>
+    [Complex a] ->
+    [a]
 ifft x
     | isPowerOfTwo n = [realPart v / (fromIntegral n) | v <- ifftRaw x n 1]
     | otherwise = error "IFFT works only for powers of two"
@@ -223,7 +253,11 @@ ifft x
     n = length x
 
 -- | Function convolution via FFT, taken from https://github.com/sjappig/convhs
-convFft :: (RealFloat a) => [a] -> [a] -> [a]
+convFft ::
+    (RealFloat a) =>
+    [a] ->
+    [a] ->
+    [a]
 convFft h x
     | length x == length h = ifft (zipWith (*) (fft h) (fft x))
     | otherwise = error "Kernel and input data must have the same length"
@@ -368,7 +402,8 @@ calculatePolyspectra m n t sigmaT ak k l p =
      in
         (evaluatedS2, evaluatedS3, evaluatedCompactS4)
 
-main :: IO ()
+main ::
+    IO ()
 main = do
     let gaussF x = exp (-x ** 2)
         randomList :: Int -> [Double]
