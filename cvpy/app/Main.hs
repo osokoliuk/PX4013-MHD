@@ -364,10 +364,9 @@ calculatePolyspectra m n t sigmaT ak k l p =
         -- Evaluate all of the polyspectra in parallel
         evaluatedS2 = parMap rdeepseq (\x -> s2 m n t x) ak
         evaluatedS3 = parMap rdeepseq (\y -> map (\x -> s3 m n t akMap x y) k) l
+        evaluatedCompactS4 = parMap rdeepseq (\y -> map (\x -> compactS4 m n t akMap x y) k) l
      in
-        -- evaluatedCompactS4 = parMap rdeepseq (\y -> map (\x -> compactS4 m n t akMap x y) k) l
-
-        (evaluatedS2, evaluatedS3, [[]])
+        (evaluatedS2, evaluatedS3, evaluatedCompactS4)
 
 main :: IO ()
 main = do
@@ -378,11 +377,11 @@ main = do
         kind = DiscreteFourier
         prec = P6
         m = real 10
-        n = real 4096
+        n = real 4096 * 2
         t = n * 0.1
         sigmaT = 0.14
-        k = real <$> [0, 1 .. realPart t]
-        l = real <$> [0, 1 .. realPart t]
+        k = real <$> [0, 1 .. realPart (5 * t)]
+        l = real <$> [0, 1 .. realPart (5 * t)]
         p = k
         tstart = 0
 
@@ -401,5 +400,6 @@ main = do
 
     -- print $ (fmap . fmap) magnitude s4
     print $ magnitude <$> s2
-    print $ (fmap . fmap) magnitude s3
+    -- print $ (fmap . fmap) magnitude s3
+    -- print $ (fmap . fmap) magnitude s4
     print ""
