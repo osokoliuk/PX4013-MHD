@@ -13,6 +13,6 @@ common warnings
 executable src
     import:           warnings
     main-is:          Main.hs
-    build-depends:    base ^>=4.20.2.0, parallel, containers 
+    build-depends:    base ^>=4.20.2.0, parallel, containers, random, numeric-tools 
     hs-source-dirs:   app
     default-language: Haskell2010

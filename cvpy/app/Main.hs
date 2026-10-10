@@ -29,10 +29,13 @@ polyspectra
 -- Module imports
 
 import Control.Parallel.Strategies
-import Data.Complex (Complex (..), conjugate, imagPart, realPart)
-import Data.List (transpose, zipWith4)
+import Data.Complex (Complex (..), conjugate, imagPart, magnitude, realPart)
+import Data.List (elemIndex, minimumBy, transpose, zipWith4)
 import qualified Data.Map as MP
-import Data.Maybe (fromMaybe)
+import Data.Maybe (fromJust, fromMaybe)
+import Data.Ord (comparing)
+import Numeric.Tools.Integration
+import System.Random
 
 -- Some type definitions
 type WindowFunction = Complex Double -> Complex Double
@@ -56,6 +59,49 @@ type C4 = Complex Double
 type S2 = Complex Double
 type S3 = Complex Double
 type S4 = Complex Double
+type Time = Complex Double
+
+-- Datatype definitions
+data FourierCoefficientKind
+    = DiscreteFourier
+    | ContinuousFourier
+    deriving (Eq, Show, Read)
+
+-- Data type that describes the precision that you want to achieve with the
+-- Gaussian quadrature integration, the only plausible choices are:
+--  * 1e-6, 1e-7, 1e-8, 1e-9
+--   (fast) ------> (slow)
+data Precision
+    = P6
+    | P7
+    | P8
+    | P9
+    deriving (Eq, Show, Read, Ord)
+
+{- | Generate an integrator based on the given precision,
+note that in this code we are only using Gaussian quadratures
+as an integration method
+-}
+makeIntegrator :: Precision -> QuadParam
+makeIntegrator precision =
+    case precision of
+        P6 -> QuadParam{quadPrecision = 1e-6, quadMaxIter = 20}
+        P7 -> QuadParam{quadPrecision = 1e-7, quadMaxIter = 20}
+        P8 -> QuadParam{quadPrecision = 1e-8, quadMaxIter = 20}
+        P9 -> QuadParam{quadPrecision = 1e-9, quadMaxIter = 20}
+        _ -> error "Incorrect precision given"
+
+realIntegral :: QuadParam -> (Double -> Double) -> (Double, Double) -> Double
+realIntegral integrator f (lo, hi) = fromMaybe 0 . quadRes $ quadRomberg integrator (lo, hi) f
+
+complexIntegral :: QuadParam -> (Complex Double -> Complex Double) -> Complex Double -> Complex Double -> Complex Double
+complexIntegral integrator f a b = r :+ i
+  where
+    r = realIntegral integrator realF (0, 1)
+    i = realIntegral integrator imagF (0, 1)
+    realF t = realPart (f (interpolate t)) -- or realF = realPart . f . interpolate
+    imagF t = imagPart (f (interpolate t))
+    interpolate t = a + (t :+ 0) * (b - a)
 
 -- | Define a shortcut for a number with Im(x) = 0
 real ::
@@ -90,14 +136,31 @@ fourAverage ::
     Complex Double
 fourAverage x y z w = average (zipWith4 (\x y z w -> x * y * z * w) x y z w)
 
--- | Gaussian function with an amplitude 1 and standard deviation t * omegaT
+interpolate :: (Fractional a) => (a, a) -> (a, a) -> a -> a
+interpolate (a, av) (b, bv) x = av + (x - a) * (bv - av) / (b - a)
+
+mapLookup :: MP.Map Double Double -> Double -> Double
+mapLookup m x =
+    case (MP.lookupLE x m, MP.lookupGE x m) of
+        (Just (a, av), Just (b, bv)) ->
+            if a == b
+                then av
+                else interpolate (a, av) (b, bv) x
+        (Nothing, Just (b, bv)) -> bv
+        (Just (a, av), Nothing) -> av
+        _ -> error "mapLookup"
+
+closestValue :: (Ord a, Num a) => a -> [(a, b)] -> b
+closestValue x m = snd $ minimumBy (comparing (abs . subtract x . fst)) m
+
+-- | Gaussian function with an amplitude 1 and standard deviation t * sigmaT
 gaussian ::
     N ->
     T ->
     OmegaT ->
     Complex Double ->
     Complex Double
-gaussian n t omegaT x = exp (-((x - n / 2) / (2 * t * omegaT)) ** 2)
+gaussian n t sigmaT x = exp (-((x - n / 2) / (2 * t * sigmaT)) ** 2)
 
 -- | Approximate confined Gaussian window function
 windowFunction ::
@@ -106,35 +169,103 @@ windowFunction ::
     OmegaT ->
     Complex Double ->
     Complex Double
-windowFunction n t omegaT x =
-    gaussian t n omegaT x
-        - ( gaussian t n omegaT (real (-1 / 2))
-                * (gaussian t n omegaT (x + t) + gaussian t n omegaT (x - t))
-          )
-            / (gaussian t n omegaT (real (-1 / 2) + t) + gaussian t n omegaT (real (-1 / 2) - t))
+windowFunction n t sigmaT x =
+    if realPart x < 0 || realPart x > realPart t
+        then real 0.0
+        else
+            gaussian t n sigmaT x
+                - ( gaussian t n sigmaT (real (-1 / 2))
+                        * (gaussian t n sigmaT (x + t) + gaussian t n sigmaT (x - t))
+                  )
+                    / (gaussian t n sigmaT (real (-1 / 2) + t) + gaussian t n sigmaT (real (-1 / 2) - t))
+
+-- | Check if a number can be represented by 2**x
+isPowerOfTwo :: Int -> Bool
+isPowerOfTwo 1 = True
+isPowerOfTwo x
+    | mod x 2 == 0 = isPowerOfTwo (div x 2)
+    | otherwise = False
+
+-- | Fast Fourier Transform (FFT) function, taken from https://github.com/sjappig/convhs
+fftRaw :: (RealFloat a) => [a] -> Int -> Int -> [Complex a]
+fftRaw _ 0 _ = []
+fftRaw [] _ _ = []
+fftRaw (x0 : _) 1 _ = [x0 :+ 0]
+fftRaw x n s = zipWith (+) x1 x2 ++ (zipWith (-) x1 x2)
+  where
+    x1 = fftRaw x (div n 2) (2 * s)
+    x2 = zipWith (*) [exp (0 :+ (-2 * pi * fromIntegral k / (fromIntegral n))) | k <- [0 .. ((div n 2) - 1)]] (fftRaw (drop s x) (div n 2) (2 * s))
+
+-- | FFT helper function
+fft :: (RealFloat a) => [a] -> [Complex a]
+fft x
+    | isPowerOfTwo n = fftRaw x n 1
+    | otherwise = error "FFT works only for powers of two"
+  where
+    n = length x
+
+-- | Inverse FFT function, taken from https://github.com/sjappig/convhs
+ifftRaw :: (RealFloat a) => [Complex a] -> Int -> Int -> [Complex a]
+ifftRaw _ 0 _ = []
+ifftRaw [] _ _ = []
+ifftRaw (x0 : _) 1 _ = [x0]
+ifftRaw x n s = zipWith (+) x1 x2 ++ (zipWith (-) x1 x2)
+  where
+    x1 = ifftRaw x (div n 2) (2 * s)
+    x2 = zipWith (*) [exp (0 :+ (2 * pi * fromIntegral k / (fromIntegral n))) | k <- [0 .. ((div n 2) - 1)]] (ifftRaw (drop s x) (div n 2) (2 * s))
+
+-- | Inverse FFT helper function
+ifft :: (RealFloat a) => [Complex a] -> [a]
+ifft x
+    | isPowerOfTwo n = [realPart v / (fromIntegral n) | v <- ifftRaw x n 1]
+    | otherwise = error "IFFT works only for powers of two"
+  where
+    n = length x
+
+-- | Function convolution via FFT, taken from https://github.com/sjappig/convhs
+convFft :: (RealFloat a) => [a] -> [a] -> [a]
+convFft h x
+    | length x == length h = ifft (zipWith (*) (fft h) (fft x))
+    | otherwise = error "Kernel and input data must have the same length"
 
 {- | Calculate Fourier coefficients for a given function and a given window function
 where the size of the window is T, containing N samples and starting from t = t0
 with a wavenumber k
 -}
 fourierCoefficient ::
+    FourierCoefficientKind ->
+    Precision ->
     T0 ->
     N ->
     T ->
-    Index_k ->
+    [Index_k] ->
     WindowFunction ->
     SignalFunction ->
-    Ak
-fourierCoefficient t0 n t k g f =
+    [Ak]
+fourierCoefficient kind prec t0 n t ks g f =
     let i = (0 :+ 1)
-     in (t / n)
-            * sum
-                [ g (j * t / n)
-                    * f (j * t / n - t0)
-                    * exp (2 * pi * i * k * j / n)
-                    * exp (-2 * pi * i * k * t0 / t)
-                | j <- real <$> [0, 1 .. realPart n - 1]
-                ]
+     in case kind of
+            DiscreteFourier ->
+                let
+                    summand j k =
+                        let x = j * t / n
+                         in g x
+                                * f (x - t0)
+                                * exp (2 * pi * i * k * x / t)
+                 in
+                    (\x -> x * t / n)
+                        <$> [ sum
+                                [ summand j k
+                                | j <- real <$> [0 .. realPart n - 1]
+                                ]
+                            | k <- ks
+                            ]
+            ContinuousFourier ->
+                let ts = real <$> [realPart t0, realPart ((t - t0) / (n - 1) + t0) .. realPart (t0 + t)]
+                    fs = realPart <$> (f <$> ts)
+                    gs = realPart <$> (g <$> ts)
+                 in fft (zipWith (\x y -> 2 * pi * x * y) fs gs)
+            _ -> error "Incorrect Fourier coefficient kind specified"
 
 {- | Calculate the values for the unbiased cumulants C2, C3, C4 and the
 corresponding polyspectra using the formulas
@@ -150,14 +281,14 @@ calculatePolyspectra ::
     [Index_l] ->
     [Index_p] ->
     ([S2], [[S3]], [[S4]])
-calculatePolyspectra m n t omegaT ak k l p =
+calculatePolyspectra m n t sigmaT ak k l p =
     let
         -- Create map for a fast lookup of Fourier coefficients
         akMap :: MP.Map Double [Ak]
         akMap = MP.fromList $ zip ([0, 1 .. realPart n - 1]) (transpose ak)
 
         -- Shortcut for a window function
-        g = windowFunction n t omegaT
+        g = windowFunction n t sigmaT
 
         -- Second order cumulant
         c2 :: M -> [Ak] -> [Ak] -> C2
@@ -223,22 +354,45 @@ calculatePolyspectra m n t omegaT ak k l p =
 
         -- Evaluate all of the polyspectra in parallel
         evaluatedS2 = (parMap rdeepseq (\x -> s2 m n t x) ak)
-        evaluatedS3 = parMap rdeepseq (\y -> parMap rdeepseq (\x -> s3 m n t akMap x y) k) l
-        evaluatedCompactS4 = parMap rdeepseq (\y -> parMap rdeepseq (\x -> compactS4 m n t akMap x y) k) l
+        evaluatedS3 = parMap rdeepseq (\y -> map (\x -> s3 m n t akMap x y) k) l
+        evaluatedCompactS4 = parMap rdeepseq (\y -> map (\x -> compactS4 m n t akMap x y) k) l
      in
         (evaluatedS2, evaluatedS3, evaluatedCompactS4)
 
 main :: IO ()
 main = do
-    let m = real 100
-        n = real 100
-        t = real 0.1
-        omegaT = 0.14
+    let gaussF x = exp (-x ** 2)
+        randomList :: Int -> [Double]
+        randomList seed = randoms (mkStdGen seed) :: [Double]
+
+        kind = DiscreteFourier
+        prec = P6
+        m = real 10
+        n = real 4096
+        t = n * 0.1
+        sigmaT = 0.14
         k = real <$> [0, 1 .. realPart n - 1]
         l = k
         p = k
-        ak = parMap rdeepseq (\t0 -> (\k -> fourierCoefficient t0 n t k (windowFunction n t omegaT) (cos)) <$> (real <$> [0, 1 .. realPart n - 1])) (real <$> [0.0, realPart t .. realPart $ m * t])
-        (s2, s3, s4) = (calculatePolyspectra m n t omegaT (transpose ak) k l p)
-    print $ (fmap . fmap) realPart s4
-    -- print $ realPart <$> s2
+        tstart = 0
+
+    contents <- readFile "noise.dat"
+
+    let
+        fs = read <$> words contents
+        ts = [0.0, 0.1 .. (0.1 * fromIntegral (length fs))]
+
+        f x = mapLookup (MP.fromList $ zip ts fs) (realPart x)
+        g x = windowFunction n t sigmaT x
+
+        ak = parMap rpar (\t0 -> fourierCoefficient kind prec t0 n t k g (real . f)) (real <$> [tstart, tstart + realPart t .. realPart $ m * t])
+        ak' = parMap rdeepseq (\t0 -> fourierCoefficient kind prec t0 n t k g (real . f)) (real <$> [tstart + realPart t / 2, tstart + realPart (3 * t / 2) .. realPart $ m * t])
+        (s2', s3', s4') = (calculatePolyspectra m n t sigmaT (transpose ak) k l p)
+        (s2'', s3'', s4'') = (calculatePolyspectra m n t sigmaT (transpose ak') k l p)
+        s2 = zipWith (\x y -> (x + y) / 2) s2' s2''
+
+    -- print $ (fmap . fmap) magnitude s4
+    print $ realPart <$> s2
+    -- print $ (fmap . fmap) magnitude s3
+    print $ (fmap . fmap) realPart ak
     print ""

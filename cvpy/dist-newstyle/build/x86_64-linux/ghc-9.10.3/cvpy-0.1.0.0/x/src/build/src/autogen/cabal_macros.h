@@ -30,6 +30,16 @@
   (major1) == 0 && (major2) <  7 || \
   (major1) == 0 && (major2) == 7 && (minor) <= 0)
 #endif /* MIN_VERSION_containers */
+/* package numeric-tools-0.2.0.1 */
+#ifndef VERSION_numeric_tools
+#define VERSION_numeric_tools "0.2.0.1"
+#endif /* VERSION_numeric_tools */
+#ifndef MIN_VERSION_numeric_tools
+#define MIN_VERSION_numeric_tools(major1,major2,minor) (\
+  (major1) <  0 || \
+  (major1) == 0 && (major2) <  2 || \
+  (major1) == 0 && (major2) == 2 && (minor) <= 0)
+#endif /* MIN_VERSION_numeric_tools */
 /* package parallel-3.3.0.0 */
 #ifndef VERSION_parallel
 #define VERSION_parallel "3.3.0.0"
@@ -40,6 +50,16 @@
   (major1) == 3 && (major2) <  3 || \
   (major1) == 3 && (major2) == 3 && (minor) <= 0)
 #endif /* MIN_VERSION_parallel */
+/* package random-1.3.1 */
+#ifndef VERSION_random
+#define VERSION_random "1.3.1"
+#endif /* VERSION_random */
+#ifndef MIN_VERSION_random
+#define MIN_VERSION_random(major1,major2,minor) (\
+  (major1) <  1 || \
+  (major1) == 1 && (major2) <  3 || \
+  (major1) == 1 && (major2) == 3 && (minor) <= 1)
+#endif /* MIN_VERSION_random */
 
 /* tool gcc-16 */
 #ifndef TOOL_VERSION_gcc
