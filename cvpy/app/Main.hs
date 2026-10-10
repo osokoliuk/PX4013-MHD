@@ -285,7 +285,7 @@ calculatePolyspectra m n t sigmaT ak k l p =
     let
         -- Create map for a fast lookup of Fourier coefficients
         akMap :: MP.Map Double [Ak]
-        akMap = MP.fromList $ zip ([0, 1 .. realPart n - 1]) (transpose ak)
+        akMap = MP.fromList $ zip ([0, 1 .. realPart n - 1]) (ak)
 
         -- Shortcut for a window function
         g = windowFunction n t sigmaT
@@ -309,14 +309,23 @@ calculatePolyspectra m n t sigmaT ak k l p =
         -- Fourth order cumulant
         c4 :: M -> [Ak] -> [Ak] -> [Ak] -> [Ak] -> C4
         c4 m x y z w =
-            ( m ** 2
-                / ((m - 1) * (m - 2) * (m - 3))
-                * ((m + 1) * fourAverage x y z w)
-                - (m + 1) * (threeAverage x y z * average w + threeAverage x y w * average z + threeAverage x z w * average y + threeAverage y z w * average x)
-                - (m - 1) * (twoAverage x y * twoAverage z w + twoAverage x z * twoAverage y w + twoAverage x w * twoAverage y z)
-                + 2 * m * (twoAverage x y * average z * average w + twoAverage x z * average y * average w + twoAverage x w * average y * average z + twoAverage y z * average x * average w + twoAverage y w * average x * average z + twoAverage z w * average x * average y)
-                - 6 * m * average x * average y * average z * average w
-            )
+            let xavg = average x
+                yavg = average y
+                zavg = average z
+                wavg = average w
+                dx = (\i -> i - xavg) <$> x
+                dy = (\i -> i - yavg) <$> y
+                dz = (\i -> i - zavg) <$> z
+                dw = (\i -> i - wavg) <$> w
+             in (m ** 2)
+                    / ((m - 1) * (m - 2) * (m - 3))
+                    * ( (m + 1) * fourAverage dx dy dz dw
+                            - (m - 1)
+                                * ( twoAverage dx dy * twoAverage dz dw
+                                        + twoAverage dx dz * twoAverage dy dw
+                                        + twoAverage dx dw * twoAverage dy dz
+                                  )
+                      )
 
         -- Second order polyspectrum (i.e. power spectrum)
         s2 :: M -> N -> T -> [Ak] -> S2
@@ -353,11 +362,12 @@ calculatePolyspectra m n t sigmaT ak k l p =
                     / (t * sum [g (j * t / n) ** 2 * (conjugate (g (j * t / n))) ** 2 | j <- real <$> [0, 1 .. realPart n - 1]])
 
         -- Evaluate all of the polyspectra in parallel
-        evaluatedS2 = (parMap rdeepseq (\x -> s2 m n t x) ak)
+        evaluatedS2 = parMap rdeepseq (\x -> s2 m n t x) ak
         evaluatedS3 = parMap rdeepseq (\y -> map (\x -> s3 m n t akMap x y) k) l
-        evaluatedCompactS4 = parMap rdeepseq (\y -> map (\x -> compactS4 m n t akMap x y) k) l
      in
-        (evaluatedS2, evaluatedS3, evaluatedCompactS4)
+        -- evaluatedCompactS4 = parMap rdeepseq (\y -> map (\x -> compactS4 m n t akMap x y) k) l
+
+        (evaluatedS2, evaluatedS3, [[]])
 
 main :: IO ()
 main = do
@@ -371,8 +381,8 @@ main = do
         n = real 4096
         t = n * 0.1
         sigmaT = 0.14
-        k = real <$> [0, 1 .. realPart n - 1]
-        l = k
+        k = real <$> [0, 1 .. realPart t]
+        l = real <$> [0, 1 .. realPart t]
         p = k
         tstart = 0
 
@@ -387,12 +397,9 @@ main = do
 
         ak = parMap rpar (\t0 -> fourierCoefficient kind prec t0 n t k g (real . f)) (real <$> [tstart, tstart + realPart t .. realPart $ m * t])
         ak' = parMap rdeepseq (\t0 -> fourierCoefficient kind prec t0 n t k g (real . f)) (real <$> [tstart + realPart t / 2, tstart + realPart (3 * t / 2) .. realPart $ m * t])
-        (s2', s3', s4') = (calculatePolyspectra m n t sigmaT (transpose ak) k l p)
-        (s2'', s3'', s4'') = (calculatePolyspectra m n t sigmaT (transpose ak') k l p)
-        s2 = zipWith (\x y -> (x + y) / 2) s2' s2''
+        (s2, s3, s4) = (calculatePolyspectra m n t sigmaT (transpose ak) k l p)
 
     -- print $ (fmap . fmap) magnitude s4
-    print $ realPart <$> s2
-    -- print $ (fmap . fmap) magnitude s3
-    print $ (fmap . fmap) realPart ak
+    print $ magnitude <$> s2
+    print $ (fmap . fmap) magnitude s3
     print ""
