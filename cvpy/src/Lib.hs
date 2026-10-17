@@ -1,16 +1,10 @@
-#!/usr/bin/env cabal
-{- cabal:
-build-depends:
-  base,
-  parallel
-ghc-options: -main-is Fourier -O2 -threaded
--}
 {-# LANGUAGE ExplicitNamespaces #-}
+{-# LANGUAGE ForeignFunctionInterface #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
 
-module Main where
+module Lib where
 
 {-
 Module      : Main.hs
@@ -34,7 +28,11 @@ import Data.List (elemIndex, minimumBy, transpose, zipWith4)
 import qualified Data.Map as MP
 import Data.Maybe (fromJust, fromMaybe)
 import Data.Ord (comparing)
+import Foreign
+import Foreign.C.String
+import Foreign.C.Types
 import Numeric.Tools.Integration
+import System.IO (hFlush, stdout)
 import System.Random
 
 -- Some type definitions
@@ -99,15 +97,32 @@ complexIntegral integrator f a b = r :+ i
   where
     r = realIntegral integrator realF (0, 1)
     i = realIntegral integrator imagF (0, 1)
-    realF t = realPart (f (interpolate t)) -- or realF = realPart . f . interpolate
+    realF t = realPart (f (interpolate t))
     imagF t = imagPart (f (interpolate t))
     interpolate t = a + (t :+ 0) * (b - a)
+
+liftA4 ::
+    (Applicative f) =>
+    (a -> b -> c -> d -> e) ->
+    f a ->
+    f b ->
+    f c ->
+    f d ->
+    f e
+liftA4 f a b c d = f <$> a <*> b <*> c <*> d
 
 -- | Define a shortcut for a number with Im(x) = 0
 real ::
     Double ->
     Complex Double
 real x = x :+ 0
+
+creal ::
+    CDouble -> Complex Double
+creal x = realToFrac x :+ 0
+
+cmagnitude :: Complex Double -> CDouble
+cmagnitude = realToFrac . magnitude
 
 -- | Average value from an array of numbers
 average ::
@@ -314,7 +329,7 @@ calculatePolyspectra ::
     [Index_k] ->
     [Index_l] ->
     [Index_p] ->
-    ([S2], [[S3]], [[S4]])
+    ([S2], [[S3]], [[[S4]]], [[S4]])
 calculatePolyspectra m n t sigmaT ak k l p =
     let
         -- Create map for a fast lookup of Fourier coefficients
@@ -398,43 +413,106 @@ calculatePolyspectra m n t sigmaT ak k l p =
         -- Evaluate all of the polyspectra in parallel
         evaluatedS2 = parMap rdeepseq (\x -> s2 m n t x) ak
         evaluatedS3 = parMap rdeepseq (\y -> map (\x -> s3 m n t akMap x y) k) l
+        evaluatedS4 = parMap rdeepseq (\z -> map (\y -> map (\x -> s4 m n t akMap x y z) k) l) p
         evaluatedCompactS4 = parMap rdeepseq (\y -> map (\x -> compactS4 m n t akMap x y) k) l
      in
-        (evaluatedS2, evaluatedS3, evaluatedCompactS4)
+        (evaluatedS2, evaluatedS3, evaluatedS4, evaluatedCompactS4)
 
+polyspectraPython ::
+    CString ->
+    CDouble ->
+    CDouble ->
+    CDouble ->
+    CDouble ->
+    Ptr CDouble ->
+    CInt ->
+    Ptr CDouble ->
+    Ptr CDouble ->
+    Ptr CDouble ->
+    Ptr CDouble ->
+    IO ()
+polyspectraPython ckind cm cn ct csigmaT lightcurve len outA outB outC outD =
+    do
+        cfs <- peekArray (fromIntegral len) lightcurve
+        kind <- peekCString ckind
+        let
+            prec = P6
+            m = creal cm
+            n = creal cn
+            t = creal ct
+            sigmaT = realToFrac (csigmaT)
+            k = real <$> [0, 1 .. realPart t]
+            l = real <$> [0, 1 .. realPart t]
+            p = real <$> [0, 1 .. realPart t]
+            tstart = 0
+
+            fs = realToFrac <$> cfs
+            ts = [0.0, 0.1 .. (0.1 * fromIntegral (length fs))]
+
+            f x = mapLookup (MP.fromList $ zip ts fs) (realPart x)
+            g x = windowFunction n t sigmaT x
+
+            ak = parMap rpar (\t0 -> fourierCoefficient (read kind) prec t0 n t k g (real . f)) (real <$> [tstart, tstart + realPart t .. realPart $ m * t])
+            (s2, s3, s4, compactS4) = (calculatePolyspectra m n t sigmaT (transpose ak) k l p)
+            (s2', s3', s4', compactS4') =
+                (cmagnitude <$> s2, (fmap . fmap) cmagnitude s3, (fmap . fmap . fmap) cmagnitude s4, (fmap . fmap) cmagnitude compactS4)
+
+        pokeArray outA (map realToFrac s2')
+        pokeArray outB (map realToFrac (concat s3'))
+        pokeArray outC (map realToFrac (concatMap concat s4'))
+        pokeArray outD (map realToFrac (concat compactS4'))
+
+foreign export ccall
+    polyspectraPython ::
+        CString ->
+        CDouble ->
+        CDouble ->
+        CDouble ->
+        CDouble ->
+        Ptr CDouble ->
+        CInt ->
+        Ptr CDouble ->
+        Ptr CDouble ->
+        Ptr CDouble ->
+        Ptr CDouble ->
+        IO ()
+
+{-
 main ::
     IO ()
-main = do
-    let gaussF x = exp (-x ** 2)
-        randomList :: Int -> [Double]
-        randomList seed = randoms (mkStdGen seed) :: [Double]
+main =
+    do
+        let gaussF x = exp (-x ** 2)
+            randomList :: Int -> [Double]
+            randomList seed = randoms (mkStdGen seed) :: [Double]
 
-        kind = DiscreteFourier
-        prec = P6
-        m = real 10
-        n = real 4096 * 2
-        t = n * 0.1
-        sigmaT = 0.14
-        k = real <$> [0, 1 .. realPart (5 * t)]
-        l = real <$> [0, 1 .. realPart (5 * t)]
-        p = k
-        tstart = 0
+            kind = DiscreteFourier
+            prec = P6
+            m = real 10
+            n = real 4096 / 4
+            t = n * 0.1
+            sigmaT = 0.14
+            k = real <$> [0, 1 .. realPart (t)]
+            l = real <$> [0, 1 .. realPart (t)]
+            p = k
+            tstart = 0
 
-    contents <- readFile "noise.dat"
+        contents <- readFile "Rossler_c4.0_p1.csv"
 
-    let
-        fs = read <$> words contents
-        ts = [0.0, 0.1 .. (0.1 * fromIntegral (length fs))]
+        let
+            fs = read <$> words contents
+            ts = [0.0, 0.1 .. (0.1 * fromIntegral (length fs))]
 
-        f x = mapLookup (MP.fromList $ zip ts fs) (realPart x)
-        g x = windowFunction n t sigmaT x
+            f x = mapLookup (MP.fromList $ zip ts fs) (realPart x)
+            g x = windowFunction n t sigmaT x
 
-        ak = parMap rpar (\t0 -> fourierCoefficient kind prec t0 n t k g (real . f)) (real <$> [tstart, tstart + realPart t .. realPart $ m * t])
-        ak' = parMap rdeepseq (\t0 -> fourierCoefficient kind prec t0 n t k g (real . f)) (real <$> [tstart + realPart t / 2, tstart + realPart (3 * t / 2) .. realPart $ m * t])
-        (s2, s3, s4) = (calculatePolyspectra m n t sigmaT (transpose ak) k l p)
+            ak = parMap rpar (\t0 -> fourierCoefficient kind prec t0 n t k g (real . f)) (real <$> [tstart, tstart + realPart t .. realPart $ m * t])
+            ak' = parMap rdeepseq (\t0 -> fourierCoefficient kind prec t0 n t k g (real . f)) (real <$> [tstart + realPart t / 2, tstart + realPart (3 * t / 2) .. realPart $ m * t])
+            (s2, s3, s4, compactS4) = (calculatePolyspectra m n t sigmaT (transpose ak) k l p)
 
-    -- print $ (fmap . fmap) magnitude s4
-    print $ magnitude <$> s2
-    -- print $ (fmap . fmap) magnitude s3
-    -- print $ (fmap . fmap) magnitude s4
-    print ""
+        -- print $ (fmap . fmap) magnitude s4
+        writeFile "s2_2.dat" $ show $ magnitude <$> s2
+        writeFile "s3_2.dat" $ show $ (fmap . fmap) magnitude (s3)
+        writeFile "s4_2.dat" $ show $ (fmap . fmap . fmap) magnitude (s4)
+        writeFile "s4compact_2.dat" $ show $ (fmap . fmap) magnitude compactS4
+-}

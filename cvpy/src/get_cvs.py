@@ -14,6 +14,35 @@ TESS and K2 missions for a given source coordinates.
 import matplotlib.pyplot as plt
 import numpy as np
 import lightkurve as lk
+import ctypes
+
+lib = ctypes.CDLL("./cvpy/libhsffi.so")
+
+
+CDouble = ctypes.c_double
+CInt = ctypes.c_int
+CDoublePtr = ctypes.POINTER(CDouble)
+
+lib.hs_start.argtypes = []
+lib.hs_start.restype = None
+
+lib.hs_stop.argtypes = []
+lib.hs_stop.restype = None
+
+lib.polyspectraPython.argtypes = [
+    ctypes.c_char_p,
+    CDouble,
+    CDouble,
+    CDouble,
+    CDouble,
+    CDoublePtr,
+    CInt,
+    CDoublePtr,
+    CDoublePtr,
+    CDoublePtr,
+    CDoublePtr,
+]
+lib.polyspectraPython.restype = None
 
 
 class CV:
@@ -45,3 +74,37 @@ class CV:
         for lc in lc_arr:
             lc.plot(c="k", ax=ax)
         plt.savefig(filename)
+
+    def calculate_polyspectrum(self, lc):
+
+        sigmaT = 0.14
+        m = 10
+        n = 512
+        t = n * 0.1
+        length = int(t)
+
+        a = np.empty(length, dtype=np.float64)
+        b = np.empty((length, length), dtype=np.float64)
+        c = np.empty((length, length, length), dtype=np.float64)
+        d = np.empty((length, length), dtype=np.float64)
+
+        lib.hs_start()
+
+        try:
+            lib.polyspectraPython(
+                b"DiscreteFourier",
+                m,
+                n,
+                t,
+                sigmaT,
+                lc.ctypes.data_as(CDoublePtr),
+                CInt(lc.size),
+                a.ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
+                b.ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
+                c.ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
+                d.ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
+            )
+        finally:
+            lib.hs_stop()
+
+        print(a, b, c, d)
