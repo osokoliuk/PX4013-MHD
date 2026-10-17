@@ -11,10 +11,21 @@ This script finds and downloads all of the available lightcurves from Kepler,
 TESS and K2 missions for a given source coordinates.
 """
 
+import matplotlib as mpl
 import matplotlib.pyplot as plt
+from matplotlib.ticker import MultipleLocator, AutoMinorLocator
 import numpy as np
 import lightkurve as lk
 import ctypes
+import smplotlib
+
+plt.rcParams["font.family"] = "AVHershey Complex"
+plt.rcParams["font.sans-serif"] = ["AVHershey Complex:heavy"]
+plt.rcParams["font.serif"] = ["AVHershey Complex:heavy"]
+mpl.rcParams["axes.linewidth"] = 2
+plt.rcParams.update({"text.usetex": False})
+colors = ["#4169e1", "#dc143c", "#2e8b58", "#d1691e", "#9d3cce"]
+
 
 lib = ctypes.CDLL("./cvpy/libhsffi.so")
 
@@ -47,13 +58,10 @@ lib.polyspectraPython.restype = None
 
 class CV:
     ########################################################################
-    # Initialize a class HMF (Halo Mass Function)
-    # float a - scale factor value (related to redshift via a = 1/(1+z))
-    # array of floats k - wavenumber in units of 1/Mpc
-    # string model - model of MG for the derivation of mu parameter
-    # string model_H - model of MG for H(a)
-    # float par1, par2 - corresponding MG parameters
-    # Masses - array of CDM halo masses
+    # Initialize a class CV (Cataclysmic Variable)
+    # string source - cataclysmic variable name / coordinates
+    # string telescope - telescope name (Kepler/K2/TESS)
+    # int nobs - number of observations to be retrieved
     ########################################################################
 
     def __init__(self, source, telescope, nobs):
@@ -70,23 +78,18 @@ class CV:
         return lc_arr
 
     def plot_lightcurves(self, lc_arr, filename):
+
         fig, ax = plt.subplots()
         for lc in lc_arr:
             lc.plot(c="k", ax=ax)
         plt.savefig(filename)
 
-    def calculate_polyspectrum(self, lc):
-
-        sigmaT = 0.14
-        m = 10
-        n = 512
-        t = n * 0.1
-        length = int(t)
-
-        a = np.empty(length, dtype=np.float64)
-        b = np.empty((length, length), dtype=np.float64)
-        c = np.empty((length, length, length), dtype=np.float64)
-        d = np.empty((length, length), dtype=np.float64)
+    def calculate_polyspectrum(self, lc, m, n, t, sigmaT):
+        length = int(round(t)) + 1
+        s2 = np.empty(length, dtype=np.float64)
+        s3 = np.empty((length, length), dtype=np.float64)
+        s4 = np.empty((length, length, length), dtype=np.float64)
+        compactS4 = np.empty((length, length), dtype=np.float64)
 
         lib.hs_start()
 
@@ -99,12 +102,129 @@ class CV:
                 sigmaT,
                 lc.ctypes.data_as(CDoublePtr),
                 CInt(lc.size),
-                a.ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
-                b.ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
-                c.ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
-                d.ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
+                s2.ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
+                s3.ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
+                s4.ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
+                compactS4.ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
             )
         finally:
             lib.hs_stop()
 
-        print(a, b, c, d)
+        return s2, s3, s4, compactS4
+
+    def plot_polyspectrum(self, s2, s3, compactS4, n, t):
+        fig = plt.figure(figsize=(8, 9))
+
+        ax = plt.subplot(321)
+        ax.xaxis.set_minor_locator(AutoMinorLocator())
+        ax.yaxis.set_minor_locator(AutoMinorLocator())
+        ax.xaxis.set_major_locator(plt.MaxNLocator(6))
+        ax.yaxis.set_major_locator(plt.MaxNLocator(6))
+
+        ax.tick_params(
+            axis="both",
+            which="major",
+            direction="out",
+            labelsize=14,
+            length=6,
+            width=1.7,
+            zorder=10,
+        )
+        ax.tick_params(
+            axis="both",
+            which="minor",
+            direction="out",
+            labelsize=11,
+            length=4,
+            width=1.1,
+            zorder=10,
+        )
+
+        for spine in ax.spines.values():
+            spine.set_zorder(11)
+
+        x = np.linspace(0, int(round(t)), int(round(t)) + 1) / t
+
+        plt.plot(x, s2, c=colors[2])
+
+        plt.xscale("log")
+        plt.yscale("log")
+        plt.title(r"$\rm Power\;spectrum$")
+        plt.xlabel(r"$\rm f\;(Hz)$")
+        plt.ylabel(r"$\rm P(f)$")
+
+        ax = plt.subplot(323)
+        ax.xaxis.set_minor_locator(AutoMinorLocator())
+        ax.yaxis.set_minor_locator(AutoMinorLocator())
+
+        ax.xaxis.set_major_locator(plt.MaxNLocator(6))
+
+        ax.yaxis.set_major_locator(plt.MaxNLocator(6))
+
+        ax.tick_params(
+            axis="both",
+            which="major",
+            direction="out",
+            labelsize=14,
+            length=6,
+            width=1.7,
+            zorder=10,
+        )
+        ax.tick_params(
+            axis="both",
+            which="minor",
+            direction="out",
+            labelsize=11,
+            length=4,
+            width=1.1,
+            zorder=10,
+        )
+
+        for spine in ax.spines.values():
+            spine.set_zorder(11)
+
+        plt.pcolormesh(x, x, np.log10(s3), cmap="cubehelix", rasterized=True)
+
+        plt.title(r"$\rm Bispectrum$")
+        plt.xlabel(r"$\rm f_1\;(Hz)$")
+        plt.ylabel(r"$\rm f_2\;(Hz)$")
+
+        ax = plt.subplot(325)
+        ax.xaxis.set_minor_locator(AutoMinorLocator())
+        ax.yaxis.set_minor_locator(AutoMinorLocator())
+
+        ax.xaxis.set_major_locator(plt.MaxNLocator(6))
+
+        ax.yaxis.set_major_locator(plt.MaxNLocator(6))
+
+        ax.tick_params(
+            axis="both",
+            which="major",
+            direction="out",
+            labelsize=14,
+            length=6,
+            width=1.7,
+            zorder=10,
+        )
+        ax.tick_params(
+            axis="both",
+            which="minor",
+            direction="out",
+            labelsize=11,
+            length=4,
+            width=1.1,
+            zorder=10,
+        )
+
+        for spine in ax.spines.values():
+            spine.set_zorder(11)
+
+        plt.pcolormesh(x, x, np.log10(compactS4), cmap="cubehelix", rasterized=True)
+
+        plt.title(r"$\rm Trispectrum$")
+        plt.xlabel(r"$\rm f_1\;(Hz)$")
+        plt.ylabel(r"$\rm f_2\;(Hz)$")
+
+        plt.tight_layout()
+
+        plt.savefig("spectra.png", bbox_inches="tight")

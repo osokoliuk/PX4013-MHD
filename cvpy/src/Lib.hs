@@ -457,10 +457,10 @@ polyspectraPython ckind cm cn ct csigmaT lightcurve len outA outB outC outD =
             (s2', s3', s4', compactS4') =
                 (cmagnitude <$> s2, (fmap . fmap) cmagnitude s3, (fmap . fmap . fmap) cmagnitude s4, (fmap . fmap) cmagnitude compactS4)
 
-        pokeArray outA (map realToFrac s2')
-        pokeArray outB (map realToFrac (concat s3'))
-        pokeArray outC (map realToFrac (concatMap concat s4'))
-        pokeArray outD (map realToFrac (concat compactS4'))
+        pokeArray outA (parMap rpar realToFrac s2')
+        pokeArray outB (parMap rpar realToFrac (concat s3'))
+        pokeArray outC (parMap rpar realToFrac (concatMap concat s4'))
+        pokeArray outD (parMap rpar realToFrac (concat compactS4'))
 
 foreign export ccall
     polyspectraPython ::
