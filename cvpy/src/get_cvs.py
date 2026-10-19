@@ -71,7 +71,12 @@ class CV:
 
     def extract_lightcurves_from_tpf(self):
         lc_arr = []
-        search_result = lk.search_targetpixelfile(self.source, author=self.telescope)
+        if self.telescope == "":
+            search_result = lk.search_targetpixelfile(self.source)
+        else:
+            search_result = lk.search_targetpixelfile(
+                self.source, author=self.telescope
+            )
         search_download = search_result.download_all()[: self.nobs]
         for dataset in search_download:
             lc_arr.append(dataset.to_lightcurve())
@@ -112,7 +117,7 @@ class CV:
 
         return s2, s3, s4, compactS4
 
-    def plot_polyspectrum(self, s2, s3, compactS4, n, t):
+    def plot_polyspectrum(self, s2, s3, compactS4, n, t, vmin):
         fig = plt.figure(figsize=(8, 9))
 
         ax = plt.subplot(321)
@@ -183,11 +188,14 @@ class CV:
         for spine in ax.spines.values():
             spine.set_zorder(11)
 
+        s3 = s3 / np.max(s3)
+        s3[s3 <= vmin] = 1e-6
         plt.pcolormesh(x, x, np.log10(s3), cmap="cubehelix", rasterized=True)
 
         plt.title(r"$\rm Bispectrum$")
         plt.xlabel(r"$\rm f_1\;(Hz)$")
         plt.ylabel(r"$\rm f_2\;(Hz)$")
+        plt.colorbar()
 
         ax = plt.subplot(325)
         ax.xaxis.set_minor_locator(AutoMinorLocator())
@@ -218,6 +226,9 @@ class CV:
 
         for spine in ax.spines.values():
             spine.set_zorder(11)
+
+        compactS4 = compactS4 / np.max(compactS4)
+        compactS4[compactS4 <= vmin] = vmin
 
         plt.pcolormesh(x, x, np.log10(compactS4), cmap="cubehelix", rasterized=True)
 
