@@ -42,6 +42,8 @@ lib.hs_stop.restype = None
 
 lib.polyspectraPython.argtypes = [
     ctypes.c_char_p,
+    ctypes.c_char_p,
+    CDouble,
     CDouble,
     CDouble,
     CDouble,
@@ -89,22 +91,30 @@ class CV:
             lc.plot(c="k", ax=ax)
         plt.savefig(filename)
 
-    def calculate_polyspectrum(self, lc, m, n, t, sigmaT):
+    def calculate_polyspectrum(self, lc, m, n, t, sigmaT, forb, spectraType):
         length = int(round(t)) + 1
-        s2 = np.empty(length, dtype=np.float64)
-        s3 = np.empty((length, length), dtype=np.float64)
-        s4 = np.empty((length, length, length), dtype=np.float64)
-        compactS4 = np.empty((length, length), dtype=np.float64)
+        if spectraType == "full":
+            s2 = np.empty(length, dtype=np.float64)
+            s3 = np.empty((length, length), dtype=np.float64)
+            s4 = np.empty((length, length, length), dtype=np.float64)
+            compactS4 = np.empty((length, length), dtype=np.float64)
+        else:
+            s2 = np.empty(length, dtype=np.float64)
+            s3 = np.empty(length, dtype=np.float64)
+            s4 = np.empty((length, length, length), dtype=np.float64)
+            compactS4 = np.empty(length, dtype=np.float64)
 
         lib.hs_start()
 
         try:
             lib.polyspectraPython(
                 b"DiscreteFourier",
+                b"Reduced",
                 m,
                 n,
                 t,
                 sigmaT,
+                forb,
                 lc.ctypes.data_as(CDoublePtr),
                 CInt(lc.size),
                 s2.ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
@@ -117,125 +127,239 @@ class CV:
 
         return s2, s3, s4, compactS4
 
-    def plot_polyspectrum(self, s2, s3, compactS4, n, t, vmin):
+    def plot_polyspectrum(self, s2, s3, compactS4, n, t, vmin, spectraType):
         fig = plt.figure(figsize=(8, 9))
+        if spectraType == "full":
+            ax = plt.subplot(321)
+            ax.xaxis.set_minor_locator(AutoMinorLocator())
+            ax.yaxis.set_minor_locator(AutoMinorLocator())
+            ax.xaxis.set_major_locator(plt.MaxNLocator(6))
+            ax.yaxis.set_major_locator(plt.MaxNLocator(6))
 
-        ax = plt.subplot(321)
-        ax.xaxis.set_minor_locator(AutoMinorLocator())
-        ax.yaxis.set_minor_locator(AutoMinorLocator())
-        ax.xaxis.set_major_locator(plt.MaxNLocator(6))
-        ax.yaxis.set_major_locator(plt.MaxNLocator(6))
+            ax.tick_params(
+                axis="both",
+                which="major",
+                direction="out",
+                labelsize=14,
+                length=6,
+                width=1.7,
+                zorder=10,
+            )
+            ax.tick_params(
+                axis="both",
+                which="minor",
+                direction="out",
+                labelsize=11,
+                length=4,
+                width=1.1,
+                zorder=10,
+            )
 
-        ax.tick_params(
-            axis="both",
-            which="major",
-            direction="out",
-            labelsize=14,
-            length=6,
-            width=1.7,
-            zorder=10,
-        )
-        ax.tick_params(
-            axis="both",
-            which="minor",
-            direction="out",
-            labelsize=11,
-            length=4,
-            width=1.1,
-            zorder=10,
-        )
+            for spine in ax.spines.values():
+                spine.set_zorder(11)
 
-        for spine in ax.spines.values():
-            spine.set_zorder(11)
+            x = np.linspace(0, int(round(t)), int(round(t)) + 1) / t
 
-        x = np.linspace(0, int(round(t)), int(round(t)) + 1) / t
+            plt.plot(x, s2, c=colors[2])
 
-        plt.plot(x, s2, c=colors[2])
+            plt.xscale("log")
+            plt.yscale("log")
+            plt.title(r"$\rm Power\;spectrum$")
+            plt.xlabel(r"$\rm f\;(Hz)$")
+            plt.ylabel(r"$\rm P(f)$")
 
-        plt.xscale("log")
-        plt.yscale("log")
-        plt.title(r"$\rm Power\;spectrum$")
-        plt.xlabel(r"$\rm f\;(Hz)$")
-        plt.ylabel(r"$\rm P(f)$")
+            ax = plt.subplot(323)
+            ax.xaxis.set_minor_locator(AutoMinorLocator())
+            ax.yaxis.set_minor_locator(AutoMinorLocator())
 
-        ax = plt.subplot(323)
-        ax.xaxis.set_minor_locator(AutoMinorLocator())
-        ax.yaxis.set_minor_locator(AutoMinorLocator())
+            ax.xaxis.set_major_locator(plt.MaxNLocator(6))
 
-        ax.xaxis.set_major_locator(plt.MaxNLocator(6))
+            ax.yaxis.set_major_locator(plt.MaxNLocator(6))
 
-        ax.yaxis.set_major_locator(plt.MaxNLocator(6))
+            ax.tick_params(
+                axis="both",
+                which="major",
+                direction="out",
+                labelsize=14,
+                length=6,
+                width=1.7,
+                zorder=10,
+            )
+            ax.tick_params(
+                axis="both",
+                which="minor",
+                direction="out",
+                labelsize=11,
+                length=4,
+                width=1.1,
+                zorder=10,
+            )
 
-        ax.tick_params(
-            axis="both",
-            which="major",
-            direction="out",
-            labelsize=14,
-            length=6,
-            width=1.7,
-            zorder=10,
-        )
-        ax.tick_params(
-            axis="both",
-            which="minor",
-            direction="out",
-            labelsize=11,
-            length=4,
-            width=1.1,
-            zorder=10,
-        )
+            for spine in ax.spines.values():
+                spine.set_zorder(11)
 
-        for spine in ax.spines.values():
-            spine.set_zorder(11)
+            s3 = s3
+            s3[s3 <= vmin] = vmin
+            plt.pcolormesh(x, x, np.log10(s3), cmap="cubehelix", rasterized=True)
 
-        s3 = s3 / np.max(s3)
-        s3[s3 <= vmin] = 1e-6
-        plt.pcolormesh(x, x, np.log10(s3), cmap="cubehelix", rasterized=True)
+            plt.title(r"$\rm Bispectrum$")
+            plt.xlabel(r"$\rm f_1\;(Hz)$")
+            plt.ylabel(r"$\rm f_2\;(Hz)$")
+            plt.colorbar()
 
-        plt.title(r"$\rm Bispectrum$")
-        plt.xlabel(r"$\rm f_1\;(Hz)$")
-        plt.ylabel(r"$\rm f_2\;(Hz)$")
-        plt.colorbar()
+            ax = plt.subplot(325)
+            ax.xaxis.set_minor_locator(AutoMinorLocator())
+            ax.yaxis.set_minor_locator(AutoMinorLocator())
 
-        ax = plt.subplot(325)
-        ax.xaxis.set_minor_locator(AutoMinorLocator())
-        ax.yaxis.set_minor_locator(AutoMinorLocator())
+            ax.xaxis.set_major_locator(plt.MaxNLocator(6))
 
-        ax.xaxis.set_major_locator(plt.MaxNLocator(6))
+            ax.yaxis.set_major_locator(plt.MaxNLocator(6))
 
-        ax.yaxis.set_major_locator(plt.MaxNLocator(6))
+            ax.tick_params(
+                axis="both",
+                which="major",
+                direction="out",
+                labelsize=14,
+                length=6,
+                width=1.7,
+                zorder=10,
+            )
+            ax.tick_params(
+                axis="both",
+                which="minor",
+                direction="out",
+                labelsize=11,
+                length=4,
+                width=1.1,
+                zorder=10,
+            )
 
-        ax.tick_params(
-            axis="both",
-            which="major",
-            direction="out",
-            labelsize=14,
-            length=6,
-            width=1.7,
-            zorder=10,
-        )
-        ax.tick_params(
-            axis="both",
-            which="minor",
-            direction="out",
-            labelsize=11,
-            length=4,
-            width=1.1,
-            zorder=10,
-        )
+            for spine in ax.spines.values():
+                spine.set_zorder(11)
 
-        for spine in ax.spines.values():
-            spine.set_zorder(11)
+            compactS4 = compactS4
+            compactS4[compactS4 <= vmin] = vmin
 
-        compactS4 = compactS4 / np.max(compactS4)
-        compactS4[compactS4 <= vmin] = vmin
+            plt.pcolormesh(x, x, np.log10(compactS4), cmap="cubehelix", rasterized=True)
 
-        plt.pcolormesh(x, x, np.log10(compactS4), cmap="cubehelix", rasterized=True)
+            plt.title(r"$\rm Trispectrum$")
+            plt.xlabel(r"$\rm f_1\;(Hz)$")
+            plt.ylabel(r"$\rm f_2\;(Hz)$")
+            plt.colorbar()
+            plt.tight_layout()
+        elif spectraType == "reduced":
+            ax = plt.subplot(321)
+            ax.xaxis.set_minor_locator(AutoMinorLocator())
+            ax.yaxis.set_minor_locator(AutoMinorLocator())
+            ax.xaxis.set_major_locator(plt.MaxNLocator(6))
+            ax.yaxis.set_major_locator(plt.MaxNLocator(6))
 
-        plt.title(r"$\rm Trispectrum$")
-        plt.xlabel(r"$\rm f_1\;(Hz)$")
-        plt.ylabel(r"$\rm f_2\;(Hz)$")
+            ax.tick_params(
+                axis="both",
+                which="major",
+                direction="out",
+                labelsize=14,
+                length=6,
+                width=1.7,
+                zorder=10,
+            )
+            ax.tick_params(
+                axis="both",
+                which="minor",
+                direction="out",
+                labelsize=11,
+                length=4,
+                width=1.1,
+                zorder=10,
+            )
 
-        plt.tight_layout()
+            for spine in ax.spines.values():
+                spine.set_zorder(11)
+
+            x = np.linspace(0, int(round(t)), int(round(t)) + 1) / t
+
+            plt.plot(x, s2, c=colors[2])
+
+            plt.xscale("log")
+            plt.yscale("log")
+            plt.title(r"$\rm Power\;spectrum$")
+            plt.xlabel(r"$\rm f\;(Hz)$")
+            plt.ylabel(r"$\rm P(f)$")
+
+            ax = plt.subplot(323)
+            ax.xaxis.set_minor_locator(AutoMinorLocator())
+            ax.yaxis.set_minor_locator(AutoMinorLocator())
+            ax.xaxis.set_major_locator(plt.MaxNLocator(6))
+            ax.yaxis.set_major_locator(plt.MaxNLocator(6))
+
+            ax.tick_params(
+                axis="both",
+                which="major",
+                direction="out",
+                labelsize=14,
+                length=6,
+                width=1.7,
+                zorder=10,
+            )
+            ax.tick_params(
+                axis="both",
+                which="minor",
+                direction="out",
+                labelsize=11,
+                length=4,
+                width=1.1,
+                zorder=10,
+            )
+
+            for spine in ax.spines.values():
+                spine.set_zorder(11)
+
+            x = np.linspace(0, int(round(t)), int(round(t)) + 1) / t
+
+            plt.plot(x, np.log10(s3), c=colors[2])
+
+            plt.xscale("log")
+            plt.yscale("log")
+            plt.title(r"$\rm Power\;spectrum$")
+            plt.xlabel(r"$\rm f\;(Hz)$")
+            plt.ylabel(r"$\rm P(f)$")
+
+            ax = plt.subplot(325)
+            ax.xaxis.set_minor_locator(AutoMinorLocator())
+            ax.yaxis.set_minor_locator(AutoMinorLocator())
+            ax.xaxis.set_major_locator(plt.MaxNLocator(6))
+            ax.yaxis.set_major_locator(plt.MaxNLocator(6))
+
+            ax.tick_params(
+                axis="both",
+                which="major",
+                direction="out",
+                labelsize=14,
+                length=6,
+                width=1.7,
+                zorder=10,
+            )
+            ax.tick_params(
+                axis="both",
+                which="minor",
+                direction="out",
+                labelsize=11,
+                length=4,
+                width=1.1,
+                zorder=10,
+            )
+
+            for spine in ax.spines.values():
+                spine.set_zorder(11)
+
+            x = np.linspace(0, int(round(t)), int(round(t)) + 1) / t
+
+            plt.plot(x, compactS4, c=colors[2])
+
+            plt.xscale("log")
+            plt.yscale("log")
+            plt.title(r"$\rm Power\;spectrum$")
+            plt.xlabel(r"$\rm f\;(Hz)$")
+            plt.ylabel(r"$\rm P(f)$")
 
         plt.savefig("spectra.png", bbox_inches="tight")
