@@ -522,19 +522,21 @@ polyspectraPython ckindf ckindp ckinde cm cn ct cdt csigmaT cfreq lightcurve tim
             dt = realToFrac cdt
             sigmaT = realToFrac (csigmaT)
             freq = creal cfreq
-            k = real <$> [0, 1 .. realPart n]
-            l = real <$> [0, 1 .. realPart n]
-            p = real <$> [0, 1 .. realPart n]
-            tstart = 0
+            k = real <$> [0, 1 .. realPart n - 1]
+            l = real <$> [0, 1 .. realPart n - 1]
+            p = real <$> [0, 1 .. realPart n - 1]
 
             fs = realToFrac <$> cfs
             ts = realToFrac <$> cts
+            tstart = head ts
 
             f x = mapLookup (MP.fromList $ zip ts fs) (realPart x)
             g x = windowFunction n t sigmaT x
 
             ak = parMap rpar (\t0 -> fourierCoefficient (read kindf) prec t0 n t k g (real . f)) (real <$> [tstart, tstart + realPart t .. realPart $ m * t])
             (s2, s3, compactS4) = (calculatePolyspectra (read kindp) (read kinde) m n t sigmaT (transpose ak) k l p freq)
+
+        print fs
 
         pokeArray outA (parMap rpar realToFrac s2)
         pokeArray outB (parMap rpar realToFrac (concat s3))

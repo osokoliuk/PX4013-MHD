@@ -96,14 +96,15 @@ class CV:
     def calculate_polyspectrum(
         self, lc, times, m, n, t, dt, sigmaT, forb, spectraType, estimatorType
     ):
+        length = n
         if spectraType == "Full":
-            s2 = np.empty(n, dtype=np.float64)
-            s3 = np.empty((n, n), dtype=np.float64)
-            compactS4 = np.empty((n, n), dtype=np.float64)
+            s2 = np.empty(length, dtype=np.float64)
+            s3 = np.empty((length, length), dtype=np.float64)
+            compactS4 = np.empty((length, length), dtype=np.float64)
         else:
-            s2 = np.empty(n, dtype=np.float64)
-            s3 = np.empty(n, dtype=np.float64)
-            compactS4 = np.empty(n, dtype=np.float64)
+            s2 = np.empty(length, dtype=np.float64)
+            s3 = np.empty(length, dtype=np.float64)
+            compactS4 = np.empty(length, dtype=np.float64)
 
         lib.hs_start()
 
@@ -162,7 +163,7 @@ class CV:
             for spine in ax.spines.values():
                 spine.set_zorder(11)
 
-            x = np.linspace(0, int(round(t)), int(round(t)) + 1) / t
+            x = np.linspace(0, 2 * np.pi * (n - 1) / t, n)
 
             plt.plot(x, s2, c=colors[2])
 
