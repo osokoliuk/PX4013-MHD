@@ -345,7 +345,7 @@ calculatePolyspectra ::
     [Index_l] ->
     [Index_p] ->
     Index_k ->
-    ([S2Mod], [[S3Mod]], [[[S4Mod]]], [[S4Mod]])
+    ([S2Mod], [[S3Mod]], [[S4Mod]])
 calculatePolyspectra pkind ekind m n t sigmaT ak k l p fixedFrequency =
     let
         -- Create map for a fast lookup of Fourier coefficients
@@ -353,7 +353,9 @@ calculatePolyspectra pkind ekind m n t sigmaT ak k l p fixedFrequency =
         akMap = MP.fromList $ zip ([0, 1 .. realPart n - 1]) (ak)
 
         akLookup :: Complex Double -> [Ak]
-        akLookup x = fromMaybe [real 0] $ MP.lookup (realPart x) akMap
+        akLookup x =
+            let result = fromMaybe [real 0] $ MP.lookup (realPart x) akMap
+             in if realPart x >= 0 then result else conjugate <$> result
 
         -- Shortcut for a window function
         g = windowFunction n t sigmaT
@@ -430,14 +432,34 @@ calculatePolyspectra pkind ekind m n t sigmaT ak k l p fixedFrequency =
                     / (t * sum [g (j * t / n) ** 2 * (conjugate (g (j * t / n))) ** 2 | j <- real <$> [0, 1 .. realPart n - 1]])
 
         -- Third order polyspectrum (momentum-based)
-        s3Moment :: Index_k -> Index_l -> S3
+        s3Moment :: Index_k -> Index_l -> S3Mod
         s3Moment k l =
             let ak = akLookup k
                 al = akLookup l
                 akl = akLookup (k + l)
-                numerator = abs . sum $ zipWith3 (\x y z -> x * y * z) ak al (conjugate <$> akl)
-                denominator = sum $ zipWith3 (\x y z -> abs (x * y * z)) ak al (conjugate <$> akl)
+                numerator = magnitude (sum (zipWith3 (\x y z -> x * y * conjugate z) ak al akl)) ** 2
+                denominator = sum (zipWith (\x y -> magnitude (x * y) ** 2) ak al) * sum (((** 2) . magnitude) <$> akl)
+             in numerator
+
+        -- Fourth order polyspectrum (momentum-based)
+        s4Moment :: Index_k -> Index_l -> Index_p -> S4Mod
+        s4Moment k l p =
+            let ak = akLookup k
+                al = akLookup l
+                ap = akLookup p
+                aklp = akLookup (k + l + p)
+                numerator = magnitude . sum $ zipWith4 (\x y z w -> x * y * z * conjugate w) ak al ap aklp
+                denominator = sum $ zipWith4 (\x y z w -> magnitude (x * y * z * conjugate w)) ak al ap aklp
              in numerator / denominator
+
+        -- Diagonal fourth order polyspectrum (momentum-based)
+        compactS4Moment :: Index_k -> Index_l -> S4Mod
+        compactS4Moment k l =
+            let ak = akLookup k
+                al = akLookup l
+                numerator = magnitude . sum $ zipWith4 (\x y z w -> x * conjugate y * z * conjugate w) ak ak al al
+                denominator = sum $ zipWith4 (\x y z w -> magnitude (x * conjugate y * z * conjugate w)) ak ak al al
+             in numerator
 
         -- Evaluate all of the polyspectra in parallel
         evaluatedS2 = magnitude <$> parMap rdeepseq (\x -> s2 m n t x) ak
@@ -448,27 +470,23 @@ calculatePolyspectra pkind ekind m n t sigmaT ak k l p fixedFrequency =
                         then
                             let fixedK = real . fromInteger . ceiling . realPart $ fixedFrequency * t / (2 * pi)
                                 evaluatedS3 = magnitude <$> parMap rdeepseq (\x -> s3 m n t fixedK x) l
-                                evaluatedS4 = [[[]]]
                                 evaluatedCompactS4 = magnitude <$> parMap rdeepseq (\x -> compactS4 m n t fixedK x) l
-                             in (evaluatedS2, singleton evaluatedS3, evaluatedS4, singleton evaluatedCompactS4)
+                             in (evaluatedS2, singleton evaluatedS3, singleton evaluatedCompactS4)
                         else
                             let evaluatedS3 = (fmap . fmap) magnitude $ parMap rdeepseq (\y -> map (\x -> s3 m n t x y) k) l
-                                evaluatedS4 = (fmap . fmap . fmap) magnitude $ parMap rdeepseq (\z -> map (\y -> map (\x -> s4 m n t x y z) k) l) p
                                 evaluatedCompactS4 = (fmap . fmap) magnitude $ parMap rdeepseq (\y -> map (\x -> compactS4 m n t x y) k) l
-                             in (evaluatedS2, evaluatedS3, evaluatedS4, evaluatedCompactS4)
+                             in (evaluatedS2, evaluatedS3, evaluatedCompactS4)
                 else
                     if pkind == Reduced
                         then
                             let fixedK = real . fromInteger . ceiling . realPart $ fixedFrequency * t / (2 * pi)
-                                evaluatedS3 = magnitude <$> parMap rdeepseq (\x -> s3Moment fixedK x) l
-                                evaluatedS4 = [[[]]]
-                                evaluatedCompactS4 = magnitude <$> parMap rdeepseq (\x -> compactS4 m n t fixedK x) l
-                             in (evaluatedS2, singleton evaluatedS3, evaluatedS4, singleton evaluatedCompactS4)
+                                evaluatedS3 = parMap rdeepseq (\x -> s3Moment fixedK x) l
+                                evaluatedCompactS4 = parMap rdeepseq (\x -> compactS4Moment fixedK x) l
+                             in (evaluatedS2, singleton evaluatedS3, singleton evaluatedCompactS4)
                         else
-                            let evaluatedS3 = (fmap . fmap) magnitude $ parMap rdeepseq (\y -> map (\x -> s3Moment x y) k) l
-                                evaluatedS4 = (fmap . fmap . fmap) magnitude $ parMap rdeepseq (\z -> map (\y -> map (\x -> s4 m n t x y z) k) l) p
-                                evaluatedCompactS4 = (fmap . fmap) magnitude $ parMap rdeepseq (\y -> map (\x -> compactS4 m n t x y) k) l
-                             in (evaluatedS2, evaluatedS3, evaluatedS4, evaluatedCompactS4)
+                            let evaluatedS3 = parMap rdeepseq (\y -> map (\x -> s3Moment x y) k) l
+                                evaluatedCompactS4 = parMap rdeepseq (\y -> map (\x -> compactS4Moment x y) k) l
+                             in (evaluatedS2, evaluatedS3, evaluatedCompactS4)
      in
         result
 
@@ -481,16 +499,18 @@ polyspectraPython ::
     CDouble ->
     CDouble ->
     CDouble ->
+    CDouble ->
+    Ptr CDouble ->
     Ptr CDouble ->
     CInt ->
     Ptr CDouble ->
     Ptr CDouble ->
     Ptr CDouble ->
-    Ptr CDouble ->
     IO ()
-polyspectraPython ckindf ckindp ckinde cm cn ct csigmaT cfreq lightcurve len outA outB outC outD =
+polyspectraPython ckindf ckindp ckinde cm cn ct cdt csigmaT cfreq lightcurve times len outA outB outC =
     do
         cfs <- peekArray (fromIntegral len) lightcurve
+        cts <- peekArray (fromIntegral len) times
         kindf <- peekCString ckindf
         kindp <- peekCString ckindp
         kinde <- peekCString ckinde
@@ -499,26 +519,26 @@ polyspectraPython ckindf ckindp ckinde cm cn ct csigmaT cfreq lightcurve len out
             m = creal cm
             n = creal cn
             t = creal ct
+            dt = realToFrac cdt
             sigmaT = realToFrac (csigmaT)
             freq = creal cfreq
-            k = real <$> [0, 1 .. realPart t]
-            l = real <$> [0, 1 .. realPart t]
-            p = real <$> [0, 1 .. realPart t]
+            k = real <$> [0, 1 .. realPart n]
+            l = real <$> [0, 1 .. realPart n]
+            p = real <$> [0, 1 .. realPart n]
             tstart = 0
 
             fs = realToFrac <$> cfs
-            ts = [0.0, 0.1 .. (0.1 * fromIntegral (length fs))]
+            ts = realToFrac <$> cts
 
             f x = mapLookup (MP.fromList $ zip ts fs) (realPart x)
             g x = windowFunction n t sigmaT x
 
             ak = parMap rpar (\t0 -> fourierCoefficient (read kindf) prec t0 n t k g (real . f)) (real <$> [tstart, tstart + realPart t .. realPart $ m * t])
-            (s2, s3, s4, compactS4) = (calculatePolyspectra (read kindp) (read kinde) m n t sigmaT (transpose ak) k l p freq)
+            (s2, s3, compactS4) = (calculatePolyspectra (read kindp) (read kinde) m n t sigmaT (transpose ak) k l p freq)
 
         pokeArray outA (parMap rpar realToFrac s2)
         pokeArray outB (parMap rpar realToFrac (concat s3))
-        pokeArray outC (parMap rpar realToFrac (concatMap concat s4))
-        pokeArray outD (parMap rpar realToFrac (concat compactS4))
+        pokeArray outC (parMap rpar realToFrac (concat compactS4))
 
 foreign export ccall
     polyspectraPython ::
@@ -530,9 +550,10 @@ foreign export ccall
         CDouble ->
         CDouble ->
         CDouble ->
+        CDouble ->
+        Ptr CDouble ->
         Ptr CDouble ->
         CInt ->
-        Ptr CDouble ->
         Ptr CDouble ->
         Ptr CDouble ->
         Ptr CDouble ->

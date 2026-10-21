@@ -49,9 +49,10 @@ lib.polyspectraPython.argtypes = [
     CDouble,
     CDouble,
     CDouble,
+    CDouble,
+    CDoublePtr,
     CDoublePtr,
     CInt,
-    CDoublePtr,
     CDoublePtr,
     CDoublePtr,
     CDoublePtr,
@@ -92,47 +93,45 @@ class CV:
             lc.plot(c="k", ax=ax)
         plt.savefig(filename)
 
-    def calculate_polyspectrum(self, lc, m, n, t, sigmaT, forb, spectraType):
-        length = int(round(t)) + 1
-        if spectraType == "full":
-            polytype = b"Full"
-            s2 = np.empty(length, dtype=np.float64)
-            s3 = np.empty((length, length), dtype=np.float64)
-            s4 = np.empty((length, length, length), dtype=np.float64)
-            compactS4 = np.empty((length, length), dtype=np.float64)
+    def calculate_polyspectrum(
+        self, lc, times, m, n, t, dt, sigmaT, forb, spectraType, estimatorType
+    ):
+        if spectraType == "Full":
+            s2 = np.empty(n, dtype=np.float64)
+            s3 = np.empty((n, n), dtype=np.float64)
+            compactS4 = np.empty((n, n), dtype=np.float64)
         else:
-            polytype = b"Reduced"
-            s2 = np.empty(length, dtype=np.float64)
-            s3 = np.empty(length, dtype=np.float64)
-            s4 = np.empty((length, length, length), dtype=np.float64)
-            compactS4 = np.empty(length, dtype=np.float64)
+            s2 = np.empty(n, dtype=np.float64)
+            s3 = np.empty(n, dtype=np.float64)
+            compactS4 = np.empty(n, dtype=np.float64)
 
         lib.hs_start()
 
         try:
             lib.polyspectraPython(
                 b"DiscreteFourier",
-                polytype,
-                b"Moment",
+                spectraType.encode("ascii"),
+                estimatorType.encode("ascii"),
                 m,
                 n,
                 t,
+                dt,
                 sigmaT,
                 forb,
                 lc.ctypes.data_as(CDoublePtr),
+                times.ctypes.data_as(CDoublePtr),
                 CInt(lc.size),
                 s2.ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
                 s3.ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
-                s4.ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
                 compactS4.ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
             )
         finally:
             lib.hs_stop()
 
-        return s2, s3, s4, compactS4
+        return s2, s3, compactS4
 
     def plot_polyspectrum(self, s2, s3, compactS4, n, t, vmin, spectraType):
-        if spectraType == "full":
+        if spectraType == "Full":
             plt.cla()
             fig = plt.figure(figsize=(8, 9))
             ax = plt.subplot(321)
@@ -205,7 +204,7 @@ class CV:
 
             s3 = s3
             s3[s3 <= vmin] = vmin
-            plt.pcolormesh(x, x, np.log10(s3), cmap="cubehelix_r", rasterized=True)
+            plt.pcolormesh(x, x, np.log10(s3), cmap="cubehelix", rasterized=True)
 
             plt.title(r"$\rm Bispectrum$")
             plt.xlabel(r"$\rm f_1\;(Hz)$")
@@ -253,7 +252,7 @@ class CV:
             plt.colorbar()
             plt.tight_layout()
             plt.savefig("spectra.png", bbox_inches="tight")
-        elif spectraType == "reduced":
+        elif spectraType == "Reduced":
             plt.cla()
             fig = plt.figure(figsize=(8, 9))
             ax = plt.subplot(321)
