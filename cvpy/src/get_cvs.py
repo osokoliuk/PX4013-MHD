@@ -43,6 +43,7 @@ lib.hs_stop.restype = None
 lib.polyspectraPython.argtypes = [
     ctypes.c_char_p,
     ctypes.c_char_p,
+    ctypes.c_char_p,
     CDouble,
     CDouble,
     CDouble,
@@ -94,11 +95,13 @@ class CV:
     def calculate_polyspectrum(self, lc, m, n, t, sigmaT, forb, spectraType):
         length = int(round(t)) + 1
         if spectraType == "full":
+            polytype = b"Full"
             s2 = np.empty(length, dtype=np.float64)
             s3 = np.empty((length, length), dtype=np.float64)
             s4 = np.empty((length, length, length), dtype=np.float64)
             compactS4 = np.empty((length, length), dtype=np.float64)
         else:
+            polytype = b"Reduced"
             s2 = np.empty(length, dtype=np.float64)
             s3 = np.empty(length, dtype=np.float64)
             s4 = np.empty((length, length, length), dtype=np.float64)
@@ -109,7 +112,8 @@ class CV:
         try:
             lib.polyspectraPython(
                 b"DiscreteFourier",
-                b"Reduced",
+                polytype,
+                b"Moment",
                 m,
                 n,
                 t,
@@ -128,8 +132,9 @@ class CV:
         return s2, s3, s4, compactS4
 
     def plot_polyspectrum(self, s2, s3, compactS4, n, t, vmin, spectraType):
-        fig = plt.figure(figsize=(8, 9))
         if spectraType == "full":
+            plt.cla()
+            fig = plt.figure(figsize=(8, 9))
             ax = plt.subplot(321)
             ax.xaxis.set_minor_locator(AutoMinorLocator())
             ax.yaxis.set_minor_locator(AutoMinorLocator())
@@ -200,7 +205,7 @@ class CV:
 
             s3 = s3
             s3[s3 <= vmin] = vmin
-            plt.pcolormesh(x, x, np.log10(s3), cmap="cubehelix", rasterized=True)
+            plt.pcolormesh(x, x, np.log10(s3), cmap="cubehelix_r", rasterized=True)
 
             plt.title(r"$\rm Bispectrum$")
             plt.xlabel(r"$\rm f_1\;(Hz)$")
@@ -247,7 +252,10 @@ class CV:
             plt.ylabel(r"$\rm f_2\;(Hz)$")
             plt.colorbar()
             plt.tight_layout()
+            plt.savefig("spectra.png", bbox_inches="tight")
         elif spectraType == "reduced":
+            plt.cla()
+            fig = plt.figure(figsize=(8, 9))
             ax = plt.subplot(321)
             ax.xaxis.set_minor_locator(AutoMinorLocator())
             ax.yaxis.set_minor_locator(AutoMinorLocator())
@@ -354,7 +362,7 @@ class CV:
 
             x = np.linspace(0, int(round(t)), int(round(t)) + 1) / t
 
-            plt.plot(x, compactS4, c=colors[2])
+            plt.plot(x, np.log10(compactS4), c=colors[2])
 
             plt.xscale("log")
             plt.yscale("log")
@@ -362,4 +370,4 @@ class CV:
             plt.xlabel(r"$\rm f\;(Hz)$")
             plt.ylabel(r"$\rm P(f)$")
 
-        plt.savefig("spectra.png", bbox_inches="tight")
+            plt.savefig("spectra_reduced.png", bbox_inches="tight")
