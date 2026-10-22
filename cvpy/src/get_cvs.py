@@ -175,13 +175,15 @@ class CV:
             for spine in ax.spines.values():
                 spine.set_zorder(11)
 
-            length = len(s2)
             fmax = 1 / (2 * dt)
-            x = np.linspace(0, np.pi * (length - 1) / t, length)
+            nz = np.flatnonzero(s2)
+            s2max_idx = nz[-1]
 
-            mask = (x >= 0) & (x <= fmax)
+            x = np.linspace(0, (len(s2) - 1) / t, len(s2))
+            x = x[: s2max_idx + 1]
+            s2 = s2[: s2max_idx + 1]
 
-            plt.plot(x[mask], s2[mask], c=colors[2])
+            plt.plot(x, s2, c=colors[2])
 
             plt.yscale("log")
             plt.title(r"$\rm Power\;spectrum$")
@@ -237,7 +239,7 @@ class CV:
             F1, F2 = np.meshgrid(f1, f2, indexing="xy")
             s3 = s3[:n_f2, :n_f1]
 
-            plt.pcolormesh(F1, F2, np.log10(s3), cmap="cmr.torch", rasterized=True)
+            plt.pcolormesh(F1, F2, np.log10(s3), cmap="cubehelix", rasterized=True)
 
             plt.title(r"$\rm Bispectrum$")
             plt.xlabel(r"$\rm f_1\;(Hz)$")
@@ -275,8 +277,27 @@ class CV:
 
             compactS4 = compactS4
             compactS4[compactS4 <= vmin] = vmin
+            length = len(s3)
+            x = np.linspace(0, np.pi * (length - 1) / t, length)
 
-            plt.pcolormesh(x, x, np.log10(compactS4), cmap="cubehelix", rasterized=True)
+            tol = 1e-12
+            nonzero = np.abs(compactS4) > tol
+
+            rows = np.where(np.any(nonzero, axis=1))[0]
+            cols = np.where(np.any(nonzero, axis=0))[0]
+
+            n_f2 = rows.max() + 1
+            n_f1 = cols.max() + 1
+
+            f1 = np.linspace(0, fmax, n_f1)
+            f2 = np.linspace(0, fmax / 2, n_f2)
+
+            F1, F2 = np.meshgrid(f1, f2, indexing="xy")
+            compactS4 = compactS4[:n_f2, :n_f1]
+
+            plt.pcolormesh(
+                F1, F2, np.log10(compactS4), cmap="cubehelix", rasterized=True
+            )
 
             plt.title(r"$\rm Trispectrum$")
             plt.xlabel(r"$\rm f_1\;(Hz)$")
@@ -314,16 +335,21 @@ class CV:
             for spine in ax.spines.values():
                 spine.set_zorder(11)
 
-            x = np.linspace(0, int(round(t)), int(round(t)) + 1) / t
+            fmax = 1 / (2 * dt)
+            nz = np.flatnonzero(s2)
+            s2max_idx = nz[-1]
+
+            x = np.linspace(0, (len(s2) - 1) / t, len(s2))
+            x = x[: s2max_idx + 1]
+            s2 = s2[: s2max_idx + 1]
 
             plt.plot(x, s2, c=colors[2])
 
-            plt.xscale("log")
-            plt.yscale("log")
             plt.title(r"$\rm Power\;spectrum$")
             plt.xlabel(r"$\rm f\;(Hz)$")
             plt.ylabel(r"$\rm P(f)$")
 
+            plt.yscale("log")
             ax = plt.subplot(323)
             ax.xaxis.set_minor_locator(AutoMinorLocator())
             ax.yaxis.set_minor_locator(AutoMinorLocator())
@@ -352,13 +378,10 @@ class CV:
             for spine in ax.spines.values():
                 spine.set_zorder(11)
 
-            x = np.linspace(0, int(round(t)), int(round(t)) + 1) / t
-
+            s3 = s3[: s2max_idx + 1]
             plt.plot(x, np.log10(s3), c=colors[2])
 
-            plt.xscale("log")
-            plt.yscale("log")
-            plt.title(r"$\rm Power\;spectrum$")
+            plt.title(r"$\rm Bispectrum$")
             plt.xlabel(r"$\rm f\;(Hz)$")
             plt.ylabel(r"$\rm P(f)$")
 
@@ -390,14 +413,12 @@ class CV:
             for spine in ax.spines.values():
                 spine.set_zorder(11)
 
-            x = np.linspace(0, int(round(t)), int(round(t)) + 1) / t
-
+            compactS4 = compactS4[: s2max_idx + 1]
             plt.plot(x, np.log10(compactS4), c=colors[2])
 
-            plt.xscale("log")
-            plt.yscale("log")
-            plt.title(r"$\rm Power\;spectrum$")
+            plt.title(r"$\rm Trispectrum$")
             plt.xlabel(r"$\rm f\;(Hz)$")
             plt.ylabel(r"$\rm P(f)$")
 
+            plt.tight_layout()
             plt.savefig("spectra_reduced.png", bbox_inches="tight")

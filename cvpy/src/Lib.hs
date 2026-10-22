@@ -400,9 +400,9 @@ calculatePolyspectra pkind ekind m n t dt sigmaT ak k l p fixedFrequency =
         -- Second order polyspectrum (i.e. power spectrum)
         s2 :: M -> N -> T -> Index_k -> S2
         s2 m n t k =
-            let wavenumberNuqyist = t / (2 * dt)
+            let wavenumberNuqyist = realPart $ t / (2 * dt)
                 ak = akLookup k
-             in if realPart k > realPart wavenumberNuqyist
+             in if realPart k > wavenumberNuqyist
                     then 0
                     else
                         (n * (c2 m ak (conjugate <$> ak)))
@@ -436,11 +436,20 @@ calculatePolyspectra pkind ekind m n t dt sigmaT ak k l p fixedFrequency =
              in (n * (c4 m ak (conjugate <$> ak) al (conjugate <$> al)))
                     / (t * sum [g (j * t / n) ** 2 * (conjugate (g (j * t / n))) ** 2 | j <- real <$> [0, 1 .. realPart n - 1]])
 
+        -- Second order polyspectrum (momentum-based)
+        s2Moment :: T -> T -> M -> Index_k -> S3Mod
+        s2Moment t dt m k =
+            let ak = akLookup k
+                wavenumberNuqyist = realPart $ t / (2 * dt)
+             in if realPart k > wavenumberNuqyist
+                    then 0
+                    else 1 / (realPart m) * sum (zipWith (\x y -> magnitude (x * conjugate y)) ak ak)
+
         -- Third order polyspectrum (momentum-based)
         s3Moment :: T -> T -> Index_k -> Index_l -> S3Mod
         s3Moment t dt k l =
-            let wavenumberNuqyist = t / (2 * dt)
-             in if realPart l > 0 && realPart k >= realPart l && realPart (k + l) <= realPart wavenumberNuqyist
+            let wavenumberNuqyist = realPart $ t / (2 * dt)
+             in if realPart l > 0 && realPart k >= realPart l && realPart (k + l) <= wavenumberNuqyist
                     then
                         let ak = akLookup k
                             al = akLookup l
@@ -462,22 +471,26 @@ calculatePolyspectra pkind ekind m n t dt sigmaT ak k l p fixedFrequency =
              in numerator / denominator
 
         -- Diagonal fourth order polyspectrum (momentum-based)
-        compactS4Moment :: Index_k -> Index_l -> S4Mod
-        compactS4Moment k l =
-            let ak = akLookup k
-                al = akLookup l
-                numerator = magnitude . sum $ zipWith4 (\x y z w -> x * conjugate y * z * conjugate w) ak ak al al
-                denominator = sum $ zipWith4 (\x y z w -> magnitude (x * conjugate y * z * conjugate w)) ak ak al al
-             in numerator
+        compactS4Moment :: T -> T -> Index_k -> Index_l -> S4Mod
+        compactS4Moment t dt k l =
+            let wavenumberNuqyist = realPart $ t / (2 * dt)
+             in if realPart k > wavenumberNuqyist || realPart l > wavenumberNuqyist
+                    then 0
+                    else
+                        let ak = akLookup k
+                            al = akLookup l
+                            numerator = magnitude . sum $ zipWith4 (\x y z w -> x * conjugate y * z * conjugate w) ak ak al al
+                            denominator = sum $ zipWith4 (\x y z w -> magnitude (x * conjugate y * z * conjugate w)) ak ak al al
+                         in numerator
 
         -- Evaluate all of the polyspectra in parallel
-        evaluatedS2 = magnitude <$> parMap rdeepseq (\x -> s2 m n t x) k
+        evaluatedS2 = parMap rdeepseq (\x -> s2Moment t dt m x) k
         result =
             if ekind == Cumulant
                 then
                     if pkind == Reduced
                         then
-                            let fixedK = real . fromInteger . ceiling . realPart $ fixedFrequency * t / (2 * pi)
+                            let fixedK = real . fromInteger . ceiling . realPart $ fixedFrequency * t
                                 evaluatedS3 = magnitude <$> parMap rdeepseq (\x -> s3 m n t fixedK x) l
                                 evaluatedCompactS4 = magnitude <$> parMap rdeepseq (\x -> compactS4 m n t fixedK x) l
                              in (evaluatedS2, singleton evaluatedS3, singleton evaluatedCompactS4)
@@ -488,13 +501,13 @@ calculatePolyspectra pkind ekind m n t dt sigmaT ak k l p fixedFrequency =
                 else
                     if pkind == Reduced
                         then
-                            let fixedK = real . fromInteger . ceiling . realPart $ fixedFrequency * t / (2 * pi)
+                            let fixedK = real . fromInteger . ceiling . realPart $ fixedFrequency * t
                                 evaluatedS3 = parMap rdeepseq (\x -> s3Moment t dt fixedK x) l
-                                evaluatedCompactS4 = parMap rdeepseq (\x -> compactS4Moment fixedK x) l
+                                evaluatedCompactS4 = parMap rdeepseq (\x -> compactS4Moment t dt fixedK x) l
                              in (evaluatedS2, singleton evaluatedS3, singleton evaluatedCompactS4)
                         else
                             let evaluatedS3 = parMap rdeepseq (\y -> map (\x -> s3Moment t dt x y) k) l
-                                evaluatedCompactS4 = parMap rdeepseq (\y -> map (\x -> compactS4Moment x y) k) l
+                                evaluatedCompactS4 = parMap rdeepseq (\y -> map (\x -> compactS4Moment t dt x y) k) l
                              in (evaluatedS2, evaluatedS3, evaluatedCompactS4)
      in
         result
