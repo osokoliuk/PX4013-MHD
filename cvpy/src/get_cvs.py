@@ -79,7 +79,7 @@ class CV:
             search_result = lk.search_targetpixelfile(self.source)
         else:
             search_result = lk.search_targetpixelfile(
-                self.source, author=self.telescope
+                self.source, author=self.telescope, cadence="long"
             )
         search_download = search_result.download_all()[: self.nobs]
         for dataset in search_download:
@@ -94,7 +94,18 @@ class CV:
         plt.savefig(filename)
 
     def calculate_polyspectrum(
-        self, lc, times, m, n, t, dt, sigmaT, forb, spectraType, estimatorType
+        self,
+        lc,
+        times,
+        m,
+        n,
+        t,
+        dt,
+        sigmaT,
+        forb,
+        fourierType,
+        spectraType,
+        estimatorType,
     ):
         length = n
         if spectraType == "Full":
@@ -110,7 +121,7 @@ class CV:
 
         try:
             lib.polyspectraPython(
-                b"DiscreteFourier",
+                fourierType.encode("ascii"),
                 spectraType.encode("ascii"),
                 estimatorType.encode("ascii"),
                 m,
@@ -131,7 +142,7 @@ class CV:
 
         return s2, s3, compactS4
 
-    def plot_polyspectrum(self, s2, s3, compactS4, n, t, vmin, spectraType):
+    def plot_polyspectrum(self, s2, s3, compactS4, n, t, dt, vmin, spectraType):
         if spectraType == "Full":
             plt.cla()
             fig = plt.figure(figsize=(8, 9))
@@ -163,7 +174,8 @@ class CV:
             for spine in ax.spines.values():
                 spine.set_zorder(11)
 
-            x = np.linspace(0, 2 * np.pi * (n - 1) / t, n)
+            length = len(s2)
+            x = np.linspace(0, 2 * np.pi * (length - 1) / t, length)
 
             plt.plot(x, s2, c=colors[2])
 
@@ -205,12 +217,16 @@ class CV:
 
             s3 = s3
             s3[s3 <= vmin] = vmin
+
+            fmax = 1 / (2 * dt)
+
             plt.pcolormesh(x, x, np.log10(s3), cmap="cubehelix", rasterized=True)
+            plt.xlim(0, fmax * 4)
+            plt.ylim(0, fmax * 3)
 
             plt.title(r"$\rm Bispectrum$")
             plt.xlabel(r"$\rm f_1\;(Hz)$")
             plt.ylabel(r"$\rm f_2\;(Hz)$")
-            plt.colorbar()
 
             ax = plt.subplot(325)
             ax.xaxis.set_minor_locator(AutoMinorLocator())
@@ -250,7 +266,6 @@ class CV:
             plt.title(r"$\rm Trispectrum$")
             plt.xlabel(r"$\rm f_1\;(Hz)$")
             plt.ylabel(r"$\rm f_2\;(Hz)$")
-            plt.colorbar()
             plt.tight_layout()
             plt.savefig("spectra.png", bbox_inches="tight")
         elif spectraType == "Reduced":

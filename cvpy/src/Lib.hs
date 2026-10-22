@@ -323,10 +323,9 @@ fourierCoefficient kind prec t0 n t ks g f =
                             | k <- ks
                             ]
             ContinuousFourier ->
-                let ts = real <$> [realPart t0, realPart ((t - t0) / (n - 1) + t0) .. realPart (t0 + t)]
+                let ts = real <$> [realPart t0, realPart (t0 + t / n) .. realPart (t0 + t * (n - 1) / n)]
                     fs = realPart <$> (f <$> ts)
-                    gs = realPart <$> (g <$> ts)
-                 in fft (zipWith (\x y -> 2 * pi * x * y) fs gs)
+                 in fft fs
             _ -> error "Incorrect Fourier coefficient kind specified"
 
 {- | Calculate the values for the unbiased cumulants C2, C3, C4 and the
@@ -339,6 +338,7 @@ calculatePolyspectra ::
     M ->
     N ->
     T ->
+    T ->
     OmegaT ->
     [[Ak]] ->
     [Index_k] ->
@@ -346,7 +346,7 @@ calculatePolyspectra ::
     [Index_p] ->
     Index_k ->
     ([S2Mod], [[S3Mod]], [[S4Mod]])
-calculatePolyspectra pkind ekind m n t sigmaT ak k l p fixedFrequency =
+calculatePolyspectra pkind ekind m n t dt sigmaT ak k l p fixedFrequency =
     let
         -- Create map for a fast lookup of Fourier coefficients
         akMap :: MP.Map Double [Ak]
@@ -432,14 +432,18 @@ calculatePolyspectra pkind ekind m n t sigmaT ak k l p fixedFrequency =
                     / (t * sum [g (j * t / n) ** 2 * (conjugate (g (j * t / n))) ** 2 | j <- real <$> [0, 1 .. realPart n - 1]])
 
         -- Third order polyspectrum (momentum-based)
-        s3Moment :: Index_k -> Index_l -> S3Mod
-        s3Moment k l =
-            let ak = akLookup k
-                al = akLookup l
-                akl = akLookup (k + l)
-                numerator = magnitude (sum (zipWith3 (\x y z -> x * y * conjugate z) ak al akl)) ** 2
-                denominator = sum (zipWith (\x y -> magnitude (x * y) ** 2) ak al) * sum (((** 2) . magnitude) <$> akl)
-             in numerator
+        s3Moment :: T -> T -> Index_k -> Index_l -> S3Mod
+        s3Moment t dt k l =
+            let wavenumberNuqyist = t / (pi * dt)
+             in if realPart l > 0 && realPart k >= realPart l && realPart (k + l) <= realPart wavenumberNuqyist
+                    then
+                        let ak = akLookup k
+                            al = akLookup l
+                            akl = akLookup (k + l)
+                            numerator = magnitude (sum (zipWith3 (\x y z -> x * y * conjugate z) ak al akl))
+                            denominator = sum (zipWith3 (\x y z -> magnitude (x * y * conjugate z)) ak al akl)
+                         in numerator
+                    else 0
 
         -- Fourth order polyspectrum (momentum-based)
         s4Moment :: Index_k -> Index_l -> Index_p -> S4Mod
@@ -480,11 +484,11 @@ calculatePolyspectra pkind ekind m n t sigmaT ak k l p fixedFrequency =
                     if pkind == Reduced
                         then
                             let fixedK = real . fromInteger . ceiling . realPart $ fixedFrequency * t / (2 * pi)
-                                evaluatedS3 = parMap rdeepseq (\x -> s3Moment fixedK x) l
+                                evaluatedS3 = parMap rdeepseq (\x -> s3Moment t dt fixedK x) l
                                 evaluatedCompactS4 = parMap rdeepseq (\x -> compactS4Moment fixedK x) l
                              in (evaluatedS2, singleton evaluatedS3, singleton evaluatedCompactS4)
                         else
-                            let evaluatedS3 = parMap rdeepseq (\y -> map (\x -> s3Moment x y) k) l
+                            let evaluatedS3 = parMap rdeepseq (\y -> map (\x -> s3Moment t dt x y) k) l
                                 evaluatedCompactS4 = parMap rdeepseq (\y -> map (\x -> compactS4Moment x y) k) l
                              in (evaluatedS2, evaluatedS3, evaluatedCompactS4)
      in
@@ -534,9 +538,7 @@ polyspectraPython ckindf ckindp ckinde cm cn ct cdt csigmaT cfreq lightcurve tim
             g x = windowFunction n t sigmaT x
 
             ak = parMap rpar (\t0 -> fourierCoefficient (read kindf) prec t0 n t k g (real . f)) (real <$> [tstart, tstart + realPart t .. realPart $ m * t])
-            (s2, s3, compactS4) = (calculatePolyspectra (read kindp) (read kinde) m n t sigmaT (transpose ak) k l p freq)
-
-        print fs
+            (s2, s3, compactS4) = (calculatePolyspectra (read kindp) (read kinde) m n t dt sigmaT (transpose ak) k l p freq)
 
         pokeArray outA (parMap rpar realToFrac s2)
         pokeArray outB (parMap rpar realToFrac (concat s3))
