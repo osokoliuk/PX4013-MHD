@@ -398,10 +398,15 @@ calculatePolyspectra pkind ekind m n t dt sigmaT ak k l p fixedFrequency =
                       )
 
         -- Second order polyspectrum (i.e. power spectrum)
-        s2 :: M -> N -> T -> [Ak] -> S2
-        s2 m n t ak =
-            (n * (c2 m ak (conjugate <$> ak)))
-                / (t * sum [g (j * t / n) * conjugate (g (j * t / n)) | j <- real <$> [0, 1 .. realPart n - 1]])
+        s2 :: M -> N -> T -> Index_k -> S2
+        s2 m n t k =
+            let wavenumberNuqyist = t / (2 * dt)
+                ak = akLookup k
+             in if realPart k > realPart wavenumberNuqyist
+                    then 0
+                    else
+                        (n * (c2 m ak (conjugate <$> ak)))
+                            / (t * sum [g (j * t / n) * conjugate (g (j * t / n)) | j <- real <$> [0, 1 .. realPart n - 1]])
 
         -- Third order polyspectrum (i.e. bispectrum)
         s3 :: M -> N -> T -> Index_k -> Index_l -> S3
@@ -434,7 +439,7 @@ calculatePolyspectra pkind ekind m n t dt sigmaT ak k l p fixedFrequency =
         -- Third order polyspectrum (momentum-based)
         s3Moment :: T -> T -> Index_k -> Index_l -> S3Mod
         s3Moment t dt k l =
-            let wavenumberNuqyist = t / (pi * dt)
+            let wavenumberNuqyist = t / (2 * dt)
              in if realPart l > 0 && realPart k >= realPart l && realPart (k + l) <= realPart wavenumberNuqyist
                     then
                         let ak = akLookup k
@@ -466,7 +471,7 @@ calculatePolyspectra pkind ekind m n t dt sigmaT ak k l p fixedFrequency =
              in numerator
 
         -- Evaluate all of the polyspectra in parallel
-        evaluatedS2 = magnitude <$> parMap rdeepseq (\x -> s2 m n t x) ak
+        evaluatedS2 = magnitude <$> parMap rdeepseq (\x -> s2 m n t x) k
         result =
             if ekind == Cumulant
                 then

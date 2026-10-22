@@ -18,6 +18,7 @@ import numpy as np
 import lightkurve as lk
 import ctypes
 import smplotlib
+import cmasher
 
 plt.rcParams["font.family"] = "AVHershey Complex"
 plt.rcParams["font.sans-serif"] = ["AVHershey Complex:heavy"]
@@ -175,11 +176,13 @@ class CV:
                 spine.set_zorder(11)
 
             length = len(s2)
-            x = np.linspace(0, 2 * np.pi * (length - 1) / t, length)
+            fmax = 1 / (2 * dt)
+            x = np.linspace(0, np.pi * (length - 1) / t, length)
 
-            plt.plot(x, s2, c=colors[2])
+            mask = (x >= 0) & (x <= fmax)
 
-            plt.xscale("log")
+            plt.plot(x[mask], s2[mask], c=colors[2])
+
             plt.yscale("log")
             plt.title(r"$\rm Power\;spectrum$")
             plt.xlabel(r"$\rm f\;(Hz)$")
@@ -215,14 +218,26 @@ class CV:
             for spine in ax.spines.values():
                 spine.set_zorder(11)
 
-            s3 = s3
             s3[s3 <= vmin] = vmin
+            length = len(s3)
+            x = np.linspace(0, np.pi * (length - 1) / t, length)
 
-            fmax = 1 / (2 * dt)
+            tol = 1e-12
+            nonzero = np.abs(s3) > tol
 
-            plt.pcolormesh(x, x, np.log10(s3), cmap="cubehelix", rasterized=True)
-            plt.xlim(0, fmax * 4)
-            plt.ylim(0, fmax * 3)
+            rows = np.where(np.any(nonzero, axis=1))[0]
+            cols = np.where(np.any(nonzero, axis=0))[0]
+
+            n_f2 = rows.max() + 1
+            n_f1 = cols.max() + 1
+
+            f1 = np.linspace(0, fmax, n_f1)
+            f2 = np.linspace(0, fmax / 2, n_f2)
+
+            F1, F2 = np.meshgrid(f1, f2, indexing="xy")
+            s3 = s3[:n_f2, :n_f1]
+
+            plt.pcolormesh(F1, F2, np.log10(s3), cmap="cmr.torch", rasterized=True)
 
             plt.title(r"$\rm Bispectrum$")
             plt.xlabel(r"$\rm f_1\;(Hz)$")
